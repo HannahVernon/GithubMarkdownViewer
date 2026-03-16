@@ -6,7 +6,7 @@ namespace GithubMarkdownViewer.Services;
 
 /// <summary>
 /// Simple file-based application logger.
-/// Logs are written to a "logs" folder beside the executable.
+/// Logs are written to a "logs" folder in the user's AppData directory.
 /// </summary>
 public static class AppLogger
 {
@@ -16,7 +16,9 @@ public static class AppLogger
 
     static AppLogger()
     {
-        LogDirectory = Path.Combine(AppContext.BaseDirectory, "logs");
+        LogDirectory = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "GithubMarkdownViewer", "logs");
         Directory.CreateDirectory(LogDirectory);
         var timestamp = DateTime.Now.ToString("yyyy-MM-dd");
         LogFilePath = Path.Combine(LogDirectory, $"app-{timestamp}.log");
@@ -32,13 +34,13 @@ public static class AppLogger
 
     public static void Error(string message, Exception? ex = null, [CallerMemberName] string? caller = null)
     {
-        var full = ex != null ? $"{message}\n  Exception: {ex.GetType().Name}: {ex.Message}\n  StackTrace: {ex.StackTrace}" : message;
+        var full = ex != null ? $"{message} [{ex.GetType().Name}: {ex.Message}]" : message;
         Write("ERROR", full, caller);
     }
 
     public static void Fatal(string message, Exception? ex = null, [CallerMemberName] string? caller = null)
     {
-        var full = ex != null ? $"{message}\n  Exception: {ex.GetType().Name}: {ex.Message}\n  StackTrace: {ex.StackTrace}" : message;
+        var full = ex != null ? $"{message} [{ex.GetType().Name}: {ex.Message}]" : message;
         Write("FATAL", full, caller);
     }
 

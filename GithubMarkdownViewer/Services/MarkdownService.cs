@@ -4,6 +4,8 @@ namespace GithubMarkdownViewer.Services;
 
 /// <summary>
 /// Provides GitHub Flavored Markdown conversion using Markdig.
+/// Uses explicit extensions instead of UseAdvancedExtensions() to avoid
+/// enabling GenericAttributes (which allows arbitrary HTML attribute injection).
 /// </summary>
 public class MarkdownService
 {
@@ -12,7 +14,6 @@ public class MarkdownService
     public MarkdownService()
     {
         _pipeline = new MarkdownPipelineBuilder()
-            .UseAdvancedExtensions()
             .UseEmojiAndSmiley()
             .UseAutoLinks()
             .UseTaskLists()
@@ -25,6 +26,10 @@ public class MarkdownService
             .UseFigures()
             .UseMathematics()
             .UseDiagrams()
+            .UseEmphasisExtras()
+            .UseCitations()
+            .UseCustomContainers()
+            .UseListExtras()
             .Build();
     }
 
@@ -32,10 +37,32 @@ public class MarkdownService
 
     /// <summary>
     /// Converts markdown text to an HTML fragment.
+    /// Raw HTML blocks and inlines are escaped to prevent XSS.
     /// </summary>
     public string ToHtml(string markdown)
     {
-        return Markdig.Markdown.ToHtml(markdown, _pipeline);
+        // Use a separate pipeline with DisableHtml for safe HTML output
+        var safePipeline = new MarkdownPipelineBuilder()
+            .UseEmojiAndSmiley()
+            .UseAutoLinks()
+            .UseTaskLists()
+            .UsePipeTables()
+            .UseGridTables()
+            .UseFootnotes()
+            .UseAutoIdentifiers()
+            .UseDefinitionLists()
+            .UseAbbreviations()
+            .UseFigures()
+            .UseMathematics()
+            .UseDiagrams()
+            .UseEmphasisExtras()
+            .UseCitations()
+            .UseCustomContainers()
+            .UseListExtras()
+            .DisableHtml()
+            .Build();
+
+        return Markdig.Markdown.ToHtml(markdown, safePipeline);
     }
 
     /// <summary>

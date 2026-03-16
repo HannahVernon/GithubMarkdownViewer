@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
@@ -33,6 +34,12 @@ public class AppSettings
     [JsonPropertyName("showPreview")]
     public bool ShowPreview { get; set; } = true;
 
+    [JsonPropertyName("wordWrap")]
+    public bool WordWrap { get; set; } = true;
+
+    [JsonPropertyName("declinedFileAssociation")]
+    public bool DeclinedFileAssociation { get; set; } = false;
+
     // ── Window state ──────────────────────────────────────────────────
 
     [JsonPropertyName("windowX")]
@@ -55,4 +62,32 @@ public class AppSettings
     /// </summary>
     [JsonIgnore]
     public double FontSizePx => FontSizePt * 96.0 / 72.0;
+
+    /// <summary>
+    /// Clamps all numeric values to valid ranges after deserialization.
+    /// </summary>
+    public void Sanitize()
+    {
+        FontSizePt = Math.Clamp(FontSizePt, MinFontSizePt, MaxFontSizePt);
+
+        if (WindowWidth.HasValue)
+            WindowWidth = Math.Clamp(WindowWidth.Value, 400, 7680);
+        if (WindowHeight.HasValue)
+            WindowHeight = Math.Clamp(WindowHeight.Value, 300, 4320);
+        if (WindowX.HasValue)
+            WindowX = Math.Clamp(WindowX.Value, -7680, 7680);
+        if (WindowY.HasValue)
+            WindowY = Math.Clamp(WindowY.Value, -4320, 4320);
+
+        // Cap recent files list
+        if (RecentFiles.Count > MaxRecentFiles)
+            RecentFiles = RecentFiles.GetRange(0, MaxRecentFiles);
+
+        // Sanitize font family — strip any characters that aren't alphanumeric, spaces, commas, or hyphens
+        if (!string.IsNullOrEmpty(FontFamilyName) &&
+            !System.Text.RegularExpressions.Regex.IsMatch(FontFamilyName, @"^[\w\s,\-\.]+$"))
+        {
+            FontFamilyName = DefaultFontFamily;
+        }
+    }
 }

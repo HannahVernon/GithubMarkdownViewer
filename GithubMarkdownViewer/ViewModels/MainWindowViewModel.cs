@@ -16,6 +16,9 @@ public partial class MainWindowViewModel : ViewModelBase
 {
     private readonly MarkdownService _markdownService = new();
 
+    /// <summary>Maximum file size (50 MB) to prevent out-of-memory on huge files.</summary>
+    private const long MaxFileSizeBytes = 50 * 1024 * 1024;
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(WindowTitle))]
     [NotifyPropertyChangedFor(nameof(PreviewMarkdown))]
@@ -35,6 +38,9 @@ public partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     private bool _showPreview = true;
+
+    [ObservableProperty]
+    private bool _wordWrap = true;
 
     [ObservableProperty]
     private string _statusText = "Ready";
@@ -96,6 +102,11 @@ public partial class MainWindowViewModel : ViewModelBase
     public Action? ExitApplication { get; set; }
     public Func<string, double, Task<(string fontFamily, double sizePt)?>>? FontPickerDialog { get; set; }
 
+    /// <summary>
+    /// File path passed via command-line argument (e.g. double-click from shell).
+    /// </summary>
+    public string? StartupFilePath { get; set; }
+
     [RelayCommand]
     private async Task ChangeFont()
     {
@@ -117,6 +128,8 @@ public partial class MainWindowViewModel : ViewModelBase
         FontSizePt = settings.FontSizePt;
         ShowEditor = settings.ShowEditor;
         ShowPreview = settings.ShowPreview;
+        WordWrap = settings.WordWrap;
+        DeclinedFileAssociation = settings.DeclinedFileAssociation;
 
         // Restore recent files list (only files that still exist)
         RecentFiles.Clear();
@@ -125,24 +138,30 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Tries to reopen the last document from the previous session.
+    /// Tries to open a startup file (command-line arg) or the last document from the previous session.
     /// Call after LoadSettings and initial UI setup.
     /// </summary>
     public async Task TryReopenLastFileAsync()
     {
-        var settings = SettingsService.Load();
-        if (!string.IsNullOrEmpty(settings.LastOpenFilePath) && File.Exists(settings.LastOpenFilePath))
+        // Command-line file takes priority (e.g. double-click from shell)
+        var fileToOpen = StartupFilePath;
+
+        if (string.IsNullOrEmpty(fileToOpen) || !File.Exists(fileToOpen))
         {
-            try
+            var settings = SettingsService.Load();
+            fileToOpen = settings.LastOpenFilePath;
+        }
+
+        if (!string.IsNullOrEmpty(fileToOpen))
+        {
+            var content = await SafeReadFileAsync(fileToOpen);
+            if (content != null)
             {
-                MarkdownText = await File.ReadAllTextAsync(settings.LastOpenFilePath);
-                CurrentFilePath = settings.LastOpenFilePath;
+                MarkdownText = content;
+                CurrentFilePath = fileToOpen;
                 IsModified = false;
-                StatusText = $"Reopened: {Path.GetFileName(settings.LastOpenFilePath)}";
-            }
-            catch (Exception ex)
-            {
-                AppLogger.Error("Failed to reopen last file", ex);
+                AddToRecentFiles(fileToOpen);
+                StatusText = $"Opened: {Path.GetFileName(fileToOpen)}";
             }
         }
     }
@@ -157,6 +176,8 @@ public partial class MainWindowViewModel : ViewModelBase
             RecentFiles = RecentFiles.ToList(),
             ShowEditor = ShowEditor,
             ShowPreview = ShowPreview,
+            WordWrap = WordWrap,
+            DeclinedFileAssociation = DeclinedFileAssociation,
             WindowX = WindowX,
             WindowY = WindowY,
             WindowWidth = WindowWidth,
@@ -178,7 +199,11 @@ public partial class MainWindowViewModel : ViewModelBase
     [System.Text.Json.Serialization.JsonIgnore]
     public string? WindowState { get; set; }
 
-    private void AddToRecentFiles(string filePath)
+    // ── File association ─────────────────────────────────────────────
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool DeclinedFileAssociation { get; set; }
+
+    public void AddToRecentFiles(string filePath)
     {
         // Remove if already present, then insert at top
         var existing = RecentFiles.FirstOrDefault(
@@ -199,6 +224,52 @@ public partial class MainWindowViewModel : ViewModelBase
     /// Saves settings including the current file path. Called on app exit.
     /// </summary>
     public void SaveSettingsOnExit() => SaveSettings();
+
+    /// <summary>
+    /// Safely reads a file after validating size and path.
+    /// Returns null and shows a message dialog if the file is too large or the path is invalid.
+    /// </summary>
+    private async Task<string?> SafeReadFileAsync(string filePath)
+    {
+        try
+        {
+            var fullPath = Path.GetFullPath(filePath);
+
+            // Block UNC paths to prevent NTLM hash leaks
+            if (fullPath.StartsWith(@"\\", StringComparison.Ordinal))
+            {
+                if (ShowMessageDialog != null)
+                    await ShowMessageDialog("Security Warning", "Cannot open files from network paths (UNC).");
+                AppLogger.Warn("Blocked UNC path access attempt");
+                return null;
+            }
+
+            var info = new FileInfo(fullPath);
+            if (!info.Exists)
+            {
+                if (ShowMessageDialog != null)
+                    await ShowMessageDialog("File Not Found", $"Could not find:\n{Path.GetFileName(filePath)}");
+                return null;
+            }
+
+            if (info.Length > MaxFileSizeBytes)
+            {
+                if (ShowMessageDialog != null)
+                    await ShowMessageDialog("File Too Large",
+                        $"The file is {info.Length / (1024 * 1024):N0} MB, which exceeds the 50 MB limit.");
+                return null;
+            }
+
+            return await File.ReadAllTextAsync(fullPath);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Error("Failed to read file", ex);
+            if (ShowMessageDialog != null)
+                await ShowMessageDialog("Error", $"Failed to read file:\n{ex.Message}");
+            return null;
+        }
+    }
 
     /// <summary>
     /// Clears the recent files list and persists the change.
@@ -230,48 +301,35 @@ public partial class MainWindowViewModel : ViewModelBase
         var path = await OpenFileDialog();
         if (path == null) return;
 
-        try
+        var content = await SafeReadFileAsync(path);
+        if (content != null)
         {
-            MarkdownText = await File.ReadAllTextAsync(path);
+            MarkdownText = content;
             CurrentFilePath = path;
             IsModified = false;
             AddToRecentFiles(path);
             StatusText = $"Opened: {Path.GetFileName(path)}";
-        }
-        catch (Exception ex)
-        {
-            if (ShowMessageDialog != null)
-                await ShowMessageDialog("Error", $"Failed to open file: {ex.Message}");
         }
     }
 
     [RelayCommand]
     private async Task OpenRecentFile(string path)
     {
-        if (!File.Exists(path))
+        if (!await HandleUnsavedChangesAsync()) return;
+
+        var content = await SafeReadFileAsync(path);
+        if (content == null)
         {
             RecentFiles.Remove(path);
             SaveSettings();
-            if (ShowMessageDialog != null)
-                await ShowMessageDialog("File Not Found", $"The file no longer exists:\n{path}");
             return;
         }
 
-        if (!await HandleUnsavedChangesAsync()) return;
-
-        try
-        {
-            MarkdownText = await File.ReadAllTextAsync(path);
-            CurrentFilePath = path;
-            IsModified = false;
-            AddToRecentFiles(path);
-            StatusText = $"Opened: {Path.GetFileName(path)}";
-        }
-        catch (Exception ex)
-        {
-            if (ShowMessageDialog != null)
-                await ShowMessageDialog("Error", $"Failed to open file: {ex.Message}");
-        }
+        MarkdownText = content;
+        CurrentFilePath = path;
+        IsModified = false;
+        AddToRecentFiles(path);
+        StatusText = $"Opened: {Path.GetFileName(path)}";
     }
 
     [RelayCommand]
@@ -414,6 +472,13 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         ShowEditor = false;
         ShowPreview = true;
+    }
+
+    [RelayCommand]
+    private void ToggleWordWrap()
+    {
+        WordWrap = !WordWrap;
+        SaveSettings();
     }
 
     public void LoadSampleContent()
