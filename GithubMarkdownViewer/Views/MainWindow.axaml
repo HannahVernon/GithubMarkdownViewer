@@ -1,0 +1,103 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:GithubMarkdownViewer.ViewModels"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="700"
+        x:Class="GithubMarkdownViewer.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Icon="/Assets/app-icon.ico"
+        Title="{Binding WindowTitle}"
+        Width="1200" Height="750"
+        MinWidth="600" MinHeight="400">
+
+    <Design.DataContext>
+        <vm:MainWindowViewModel/>
+    </Design.DataContext>
+
+    <Window.KeyBindings>
+        <KeyBinding Gesture="Ctrl+N" Command="{Binding NewFileCommand}" />
+        <KeyBinding Gesture="Ctrl+O" Command="{Binding OpenFileCommand}" />
+        <KeyBinding Gesture="Ctrl+S" Command="{Binding SaveFileCommand}" />
+        <KeyBinding Gesture="Ctrl+Shift+S" Command="{Binding SaveFileAsCommand}" />
+        <KeyBinding Gesture="Ctrl+Shift+E" Command="{Binding ExportHtmlCommand}" />
+    </Window.KeyBindings>
+
+    <DockPanel>
+        <!-- Menu Bar -->
+        <Menu DockPanel.Dock="Top">
+            <MenuItem Header="_File">
+                <MenuItem Header="_New" Command="{Binding NewFileCommand}" InputGesture="Ctrl+N" />
+                <MenuItem Header="_Open..." Command="{Binding OpenFileCommand}" InputGesture="Ctrl+O" />
+                <MenuItem Header="Recent _Files" Name="RecentFilesMenu" />
+                <Separator />
+                <MenuItem Header="_Save" Command="{Binding SaveFileCommand}" InputGesture="Ctrl+S" />
+                <MenuItem Header="Save _As..." Command="{Binding SaveFileAsCommand}" InputGesture="Ctrl+Shift+S" />
+                <Separator />
+                <MenuItem Header="_Export HTML..." Command="{Binding ExportHtmlCommand}" InputGesture="Ctrl+Shift+E" />
+                <Separator />
+                <MenuItem Header="E_xit" Command="{Binding ExitAppCommand}" InputGesture="Alt+F4" />
+            </MenuItem>
+            <MenuItem Header="_View">
+                <MenuItem Header="_Split View" Command="{Binding ViewSplitCommand}" />
+                <MenuItem Header="_Editor Only" Command="{Binding ViewEditorOnlyCommand}" />
+                <MenuItem Header="_Preview Only" Command="{Binding ViewPreviewOnlyCommand}" />
+            </MenuItem>
+            <MenuItem Header="F_ormat">
+                <MenuItem Header="_Font..." Command="{Binding ChangeFontCommand}" />
+            </MenuItem>
+        </Menu>
+
+        <!-- Status Bar -->
+        <Border DockPanel.Dock="Bottom" Background="#f6f8fa" BorderBrush="#d1d9e0" BorderThickness="0,1,0,0" Padding="10,4">
+            <TextBlock Text="{Binding StatusText}" FontSize="12" Foreground="#656d76" />
+        </Border>
+
+        <!-- Main Content: Editor + Preview split -->
+        <Grid Name="ContentGrid">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Editor Pane -->
+            <Border Grid.Column="0" Name="EditorPane" IsVisible="{Binding ShowEditor}">
+                <DockPanel>
+                    <Border DockPanel.Dock="Top" Background="#f6f8fa" Padding="10,6" BorderBrush="#d1d9e0" BorderThickness="0,0,0,1">
+                        <TextBlock Text="EDITOR" FontSize="11" FontWeight="SemiBold" Foreground="#656d76" />
+                    </Border>
+                    <TextBox Name="EditorTextBox"
+                             Text="{Binding MarkdownText, Mode=TwoWay}"
+                             AcceptsReturn="True"
+                             AcceptsTab="True"
+                             TextWrapping="NoWrap"
+                             FontFamily="{Binding EditorFontFamily}"
+                             FontSize="{Binding FontSizePx}"
+                             Padding="12"
+                             BorderThickness="0"
+                             CornerRadius="0" />
+                </DockPanel>
+            </Border>
+
+            <!-- Splitter -->
+            <GridSplitter Grid.Column="1" Name="PaneSplitter" Width="4" Background="#d1d9e0"
+                          ResizeDirection="Columns" />
+
+            <!-- Preview Pane -->
+            <Border Grid.Column="2" Name="PreviewPane" IsVisible="{Binding ShowPreview}"
+                    BorderBrush="#d1d9e0" BorderThickness="1,0,0,0">
+                <DockPanel>
+                    <Border DockPanel.Dock="Top" Background="#f6f8fa" Padding="10,6" BorderBrush="#d1d9e0" BorderThickness="0,0,0,1">
+                        <TextBlock Text="PREVIEW" FontSize="11" FontWeight="SemiBold" Foreground="#656d76" />
+                    </Border>
+                    <ScrollViewer Name="PreviewScrollViewer"
+                                HorizontalScrollBarVisibility="Auto"
+                                VerticalScrollBarVisibility="Auto">
+                        <StackPanel Name="PreviewPanel" Margin="20" Spacing="0" />
+                    </ScrollViewer>
+                </DockPanel>
+            </Border>
+        </Grid>
+    </DockPanel>
+</Window>

@@ -1,0 +1,41 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+
+# NuGet
+*.nupkg
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+*.nuget.props
+*.nuget.targets
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.swp
+*~
+
+# App runtime files
+logs/
+settings.json
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Node (icon generation artifacts)
+node_modules/
+package.json
+package-lock.json
