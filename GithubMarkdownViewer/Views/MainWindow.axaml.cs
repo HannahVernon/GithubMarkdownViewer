@@ -214,6 +214,8 @@ public partial class MainWindow : Window
             d = d.Parent;
         }
         // segments[0] is the immediate parent, segments[1] is grandparent, etc.
+        if (segments.Count == 0)
+            return fileName;
 
         // Always include at least one parent
         var parts = new List<string> { segments[0], fileName };
@@ -494,7 +496,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            AppLogger.Error($"Failed to handle link click: {url}", ex);
+            AppLogger.Error("Failed to handle link click", ex);
         }
     }
 
@@ -547,11 +549,16 @@ public partial class MainWindow : Window
         }
 
         // Path traversal protection: warn if navigating outside the current directory tree
-        if (baseDir != null && !resolvedPath.StartsWith(baseDir, StringComparison.OrdinalIgnoreCase))
+        if (baseDir != null)
         {
-            var proceed = await ConfirmAsync(
-                $"This link navigates outside the current directory to:\n{resolvedPath}\n\nOpen anyway?");
-            if (!proceed) return;
+            var normalizedBase = baseDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                                 + Path.DirectorySeparatorChar;
+            if (!resolvedPath.StartsWith(normalizedBase, StringComparison.OrdinalIgnoreCase))
+            {
+                var proceed = await ConfirmAsync(
+                    $"This link navigates outside the current directory to:\n{resolvedPath}\n\nOpen anyway?");
+                if (!proceed) return;
+            }
         }
 
         if (!File.Exists(resolvedPath))

@@ -592,6 +592,8 @@ public class MarkdownToAvaloniaRenderer
     /// <summary>
     /// Creates a clickable inline link that raises <see cref="LinkClicked"/> when clicked.
     /// Uses an InlineUIContainer wrapping a TextBlock styled as a hyperlink.
+    /// A WeakReference to the renderer prevents detached controls from pinning
+    /// this object (and its event subscribers) in memory after preview re-renders.
     /// </summary>
     private InlineUIContainer CreateClickableLink(string displayText, string url)
     {
@@ -608,10 +610,12 @@ public class MarkdownToAvaloniaRenderer
         ToolTip.SetTip(tb, url);
 
         var capturedUrl = url;
+        var weakRenderer = new WeakReference<MarkdownToAvaloniaRenderer>(this);
         tb.PointerPressed += (_, e) =>
         {
             e.Handled = true;
-            LinkClicked?.Invoke(capturedUrl);
+            if (weakRenderer.TryGetTarget(out var renderer))
+                renderer.LinkClicked?.Invoke(capturedUrl);
         };
 
         return new InlineUIContainer { Child = tb };
