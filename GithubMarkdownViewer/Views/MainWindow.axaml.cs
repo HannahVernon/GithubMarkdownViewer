@@ -168,10 +168,10 @@ public partial class MainWindow : Window
 
         foreach (var path in vm.RecentFiles)
         {
-            var fileName = System.IO.Path.GetFileName(path);
+            var displayName = ShortenPath(path, 30);
             var item = new MenuItem
             {
-                Header = fileName,
+                Header = displayName,
                 Tag = path,
             };
             ToolTip.SetTip(item, path);
@@ -191,6 +191,49 @@ public partial class MainWindow : Window
             vm.ClearRecentFiles();
         };
         RecentFilesMenu.Items.Add(clearItem);
+    }
+
+    /// <summary>
+    /// Builds a short display path like "..\parentDir\file.md", including as many
+    /// trailing directory segments as will fit within <paramref name="maxLength"/>.
+    /// Always shows at least one parent directory.
+    /// </summary>
+    private static string ShortenPath(string fullPath, int maxLength)
+    {
+        var fileName = Path.GetFileName(fullPath);
+        var dir = Path.GetDirectoryName(fullPath);
+        if (string.IsNullOrEmpty(dir))
+            return fileName;
+
+        // Split into directory segments
+        var segments = new List<string>();
+        var d = new DirectoryInfo(dir);
+        while (d != null)
+        {
+            segments.Add(d.Name);
+            d = d.Parent;
+        }
+        // segments[0] is the immediate parent, segments[1] is grandparent, etc.
+
+        // Always include at least one parent
+        var parts = new List<string> { segments[0], fileName };
+        var candidate = $"..{Path.DirectorySeparatorChar}{string.Join(Path.DirectorySeparatorChar, parts)}";
+
+        // Try adding more parent directories while under the limit
+        for (int i = 1; i < segments.Count; i++)
+        {
+            var trial = new List<string>();
+            for (int j = i; j >= 0; j--)
+                trial.Add(segments[j]);
+            trial.Add(fileName);
+
+            var trialStr = $"..{Path.DirectorySeparatorChar}{string.Join(Path.DirectorySeparatorChar, trial)}";
+            if (trialStr.Length > maxLength)
+                break;
+            candidate = trialStr;
+        }
+
+        return candidate;
     }
 
     protected override void OnDataContextChanged(EventArgs e)
