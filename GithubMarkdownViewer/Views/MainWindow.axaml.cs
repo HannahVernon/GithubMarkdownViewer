@@ -27,6 +27,12 @@ public partial class MainWindow : Window
     private ScrollViewer? _editorScrollViewer;
     private bool _isSyncingScroll;
 
+    // Navigation history for .md link traversal
+    private readonly Stack<string> _backStack = new();
+    private readonly Stack<string> _forwardStack = new();
+    private Button? _backButton;
+    private Button? _forwardButton;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -236,6 +242,17 @@ public partial class MainWindow : Window
 
                 // Wire up About menu
                 AboutMenuItem.Click += async (_, _) => await ShowAboutDialogAsync();
+
+                // Wire up navigation buttons
+                _backButton = this.FindControl<Button>("NavBackButton");
+                _forwardButton = this.FindControl<Button>("NavForwardButton");
+                if (_backButton != null)
+                    _backButton.Click += async (_, _) => await NavigateBackAsync();
+                if (_forwardButton != null)
+                    _forwardButton.Click += async (_, _) => await NavigateForwardAsync();
+
+                // Alt+Left / Alt+Right for navigation
+                KeyDown += OnNavigationKeyDown;
 
                 // Try to reopen last document; fall back to sample content
                 _ = InitContentAsync(vm);
@@ -486,6 +503,14 @@ public partial class MainWindow : Window
         // Open the linked .md file
         try
         {
+            // Push current file onto back stack before navigating
+            if (!string.IsNullOrEmpty(vm.CurrentFilePath))
+            {
+                _backStack.Push(vm.CurrentFilePath);
+                _forwardStack.Clear();
+                UpdateNavigationButtons();
+            }
+
             var content = await File.ReadAllTextAsync(resolvedPath);
             vm.MarkdownText = content;
             vm.CurrentFilePath = resolvedPath;
@@ -515,6 +540,106 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             AppLogger.Error($"Failed to open URL in browser: {url}", ex);
+        }
+    }
+
+    // ── Back / Forward navigation ───────────────────────────────────
+
+    private void UpdateNavigationButtons()
+    {
+        if (_backButton != null)
+        {
+            _backButton.IsEnabled = _backStack.Count > 0;
+            ToolTip.SetTip(_backButton, _backStack.Count > 0
+                ? $"Back to {Path.GetFileName(_backStack.Peek())} (Alt+Left)"
+                : "Navigate back (Alt+Left)");
+        }
+        if (_forwardButton != null)
+        {
+            _forwardButton.IsEnabled = _forwardStack.Count > 0;
+            ToolTip.SetTip(_forwardButton, _forwardStack.Count > 0
+                ? $"Forward to {Path.GetFileName(_forwardStack.Peek())} (Alt+Right)"
+                : "Navigate forward (Alt+Right)");
+        }
+    }
+
+    private async Task NavigateBackAsync()
+    {
+        if (_backStack.Count == 0) return;
+        if (DataContext is not MainWindowViewModel vm) return;
+
+        if (vm.IsModified)
+        {
+            var canProceed = await vm.HandleUnsavedChangesAsync();
+            if (!canProceed) return;
+        }
+
+        var target = _backStack.Pop();
+        if (!string.IsNullOrEmpty(vm.CurrentFilePath))
+            _forwardStack.Push(vm.CurrentFilePath);
+
+        await NavigateToFileAsync(vm, target);
+        UpdateNavigationButtons();
+    }
+
+    private async Task NavigateForwardAsync()
+    {
+        if (_forwardStack.Count == 0) return;
+        if (DataContext is not MainWindowViewModel vm) return;
+
+        if (vm.IsModified)
+        {
+            var canProceed = await vm.HandleUnsavedChangesAsync();
+            if (!canProceed) return;
+        }
+
+        var target = _forwardStack.Pop();
+        if (!string.IsNullOrEmpty(vm.CurrentFilePath))
+            _backStack.Push(vm.CurrentFilePath);
+
+        await NavigateToFileAsync(vm, target);
+        UpdateNavigationButtons();
+    }
+
+    private async Task NavigateToFileAsync(MainWindowViewModel vm, string filePath)
+    {
+        if (!File.Exists(filePath))
+        {
+            await ShowMessageAsync("File Not Found",
+                $"Could not find:\n{filePath}");
+            return;
+        }
+
+        try
+        {
+            var content = await File.ReadAllTextAsync(filePath);
+            vm.MarkdownText = content;
+            vm.CurrentFilePath = filePath;
+            vm.IsModified = false;
+            vm.AddToRecentFiles(filePath);
+            vm.StatusText = $"Opened: {Path.GetFileName(filePath)}";
+            UpdatePreview(content);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Error($"Failed to navigate to file: {filePath}", ex);
+            await ShowMessageAsync("Error", $"Failed to open file:\n{ex.Message}");
+        }
+    }
+
+    private void OnNavigationKeyDown(object? sender, Avalonia.Input.KeyEventArgs e)
+    {
+        if (e.KeyModifiers != Avalonia.Input.KeyModifiers.Alt) return;
+
+        if (e.Key == Avalonia.Input.Key.Left && _backStack.Count > 0)
+        {
+            e.Handled = true;
+            _ = NavigateBackAsync();
+        }
+        else if (e.Key == Avalonia.Input.Key.Right && _forwardStack.Count > 0)
+        {
+            e.Handled = true;
+            _ = NavigateForwardAsync();
         }
     }
 
