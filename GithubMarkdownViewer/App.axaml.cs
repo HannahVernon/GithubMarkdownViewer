@@ -41,7 +41,12 @@ public partial class App : Application
             // If a file was passed as a command-line argument, set it for opening
             if (desktop.Args is { Length: > 0 } && !string.IsNullOrEmpty(desktop.Args[0]))
             {
-                vm.StartupFilePath = desktop.Args[0];
+                var argPath = desktop.Args[0];
+                // Block UNC paths to prevent NTLM hash leaks
+                if (!argPath.StartsWith(@"\\", StringComparison.Ordinal))
+                    vm.StartupFilePath = argPath;
+                else
+                    AppLogger.Warn("Blocked UNC path from command-line argument");
             }
 
             desktop.MainWindow = new MainWindow

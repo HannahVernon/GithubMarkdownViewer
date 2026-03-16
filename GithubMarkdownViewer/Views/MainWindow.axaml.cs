@@ -524,17 +524,49 @@ public partial class MainWindow : Window
 
         // Resolve relative to the directory of the currently open file
         string? resolvedPath = null;
+        string? baseDir = null;
         if (!string.IsNullOrEmpty(vm.CurrentFilePath))
         {
-            var dir = Path.GetDirectoryName(vm.CurrentFilePath);
-            if (dir != null)
-                resolvedPath = Path.GetFullPath(Path.Combine(dir, pathPart));
+            baseDir = Path.GetDirectoryName(Path.GetFullPath(vm.CurrentFilePath));
+            if (baseDir != null)
+                resolvedPath = Path.GetFullPath(Path.Combine(baseDir, pathPart));
         }
 
-        if (resolvedPath == null || !File.Exists(resolvedPath))
+        if (resolvedPath == null)
+        {
+            await ShowMessageAsync("Navigation Error",
+                "Cannot resolve link — no file is currently open.");
+            return;
+        }
+
+        // Block UNC paths to prevent NTLM hash leaks
+        if (resolvedPath.StartsWith(@"\\", StringComparison.Ordinal))
+        {
+            await ShowMessageAsync("Security Warning", "Cannot open files from network paths.");
+            return;
+        }
+
+        // Path traversal protection: warn if navigating outside the current directory tree
+        if (baseDir != null && !resolvedPath.StartsWith(baseDir, StringComparison.OrdinalIgnoreCase))
+        {
+            var proceed = await ConfirmAsync(
+                $"This link navigates outside the current directory to:\n{resolvedPath}\n\nOpen anyway?");
+            if (!proceed) return;
+        }
+
+        if (!File.Exists(resolvedPath))
         {
             await ShowMessageAsync("File Not Found",
                 $"Could not find the linked file:\n{pathPart}");
+            return;
+        }
+
+        // Check file size
+        var fileInfo = new FileInfo(resolvedPath);
+        if (fileInfo.Length > 50 * 1024 * 1024)
+        {
+            await ShowMessageAsync("File Too Large",
+                $"The file is {fileInfo.Length / (1024 * 1024):N0} MB, which exceeds the 50 MB limit.");
             return;
         }
 
@@ -566,7 +598,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            AppLogger.Error($"Failed to open linked file: {resolvedPath}", ex);
+            AppLogger.Error("Failed to open linked file", ex);
             await ShowMessageAsync("Error", $"Failed to open file:\n{ex.Message}");
         }
     }
@@ -576,15 +608,21 @@ public partial class MainWindow : Window
         try
         {
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
                 Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
-            else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-                Process.Start("open", url);
+            }
             else
-                Process.Start("xdg-open", url);
+            {
+                // Use ArgumentList to avoid shell interpretation of URL contents
+                var cmd = RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? "open" : "xdg-open";
+                var psi = new ProcessStartInfo(cmd) { UseShellExecute = false };
+                psi.ArgumentList.Add(url);
+                Process.Start(psi);
+            }
         }
         catch (Exception ex)
         {
-            AppLogger.Error($"Failed to open URL in browser: {url}", ex);
+            AppLogger.Error("Failed to open URL in browser", ex);
         }
     }
 
@@ -651,7 +689,15 @@ public partial class MainWindow : Window
         if (!File.Exists(filePath))
         {
             await ShowMessageAsync("File Not Found",
-                $"Could not find:\n{filePath}");
+                $"Could not find:\n{Path.GetFileName(filePath)}");
+            return;
+        }
+
+        var fileInfo = new FileInfo(filePath);
+        if (fileInfo.Length > 50 * 1024 * 1024)
+        {
+            await ShowMessageAsync("File Too Large",
+                $"The file is {fileInfo.Length / (1024 * 1024):N0} MB, which exceeds the 50 MB limit.");
             return;
         }
 
@@ -667,7 +713,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            AppLogger.Error($"Failed to navigate to file: {filePath}", ex);
+            AppLogger.Error("Failed to navigate to file", ex);
             await ShowMessageAsync("Error", $"Failed to open file:\n{ex.Message}");
         }
     }

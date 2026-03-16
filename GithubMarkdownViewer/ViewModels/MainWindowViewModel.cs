@@ -16,6 +16,9 @@ public partial class MainWindowViewModel : ViewModelBase
 {
     private readonly MarkdownService _markdownService = new();
 
+    /// <summary>Maximum file size (50 MB) to prevent out-of-memory on huge files.</summary>
+    private const long MaxFileSizeBytes = 50 * 1024 * 1024;
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(WindowTitle))]
     [NotifyPropertyChangedFor(nameof(PreviewMarkdown))]
@@ -149,19 +152,16 @@ public partial class MainWindowViewModel : ViewModelBase
             fileToOpen = settings.LastOpenFilePath;
         }
 
-        if (!string.IsNullOrEmpty(fileToOpen) && File.Exists(fileToOpen))
+        if (!string.IsNullOrEmpty(fileToOpen))
         {
-            try
+            var content = await SafeReadFileAsync(fileToOpen);
+            if (content != null)
             {
-                MarkdownText = await File.ReadAllTextAsync(fileToOpen);
+                MarkdownText = content;
                 CurrentFilePath = fileToOpen;
                 IsModified = false;
                 AddToRecentFiles(fileToOpen);
                 StatusText = $"Opened: {Path.GetFileName(fileToOpen)}";
-            }
-            catch (Exception ex)
-            {
-                AppLogger.Error("Failed to reopen file", ex);
             }
         }
     }
@@ -226,6 +226,52 @@ public partial class MainWindowViewModel : ViewModelBase
     public void SaveSettingsOnExit() => SaveSettings();
 
     /// <summary>
+    /// Safely reads a file after validating size and path.
+    /// Returns null and shows a message dialog if the file is too large or the path is invalid.
+    /// </summary>
+    private async Task<string?> SafeReadFileAsync(string filePath)
+    {
+        try
+        {
+            var fullPath = Path.GetFullPath(filePath);
+
+            // Block UNC paths to prevent NTLM hash leaks
+            if (fullPath.StartsWith(@"\\", StringComparison.Ordinal))
+            {
+                if (ShowMessageDialog != null)
+                    await ShowMessageDialog("Security Warning", "Cannot open files from network paths (UNC).");
+                AppLogger.Warn("Blocked UNC path access attempt");
+                return null;
+            }
+
+            var info = new FileInfo(fullPath);
+            if (!info.Exists)
+            {
+                if (ShowMessageDialog != null)
+                    await ShowMessageDialog("File Not Found", $"Could not find:\n{Path.GetFileName(filePath)}");
+                return null;
+            }
+
+            if (info.Length > MaxFileSizeBytes)
+            {
+                if (ShowMessageDialog != null)
+                    await ShowMessageDialog("File Too Large",
+                        $"The file is {info.Length / (1024 * 1024):N0} MB, which exceeds the 50 MB limit.");
+                return null;
+            }
+
+            return await File.ReadAllTextAsync(fullPath);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Error("Failed to read file", ex);
+            if (ShowMessageDialog != null)
+                await ShowMessageDialog("Error", $"Failed to read file:\n{ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Clears the recent files list and persists the change.
     /// </summary>
     public void ClearRecentFiles()
@@ -255,48 +301,35 @@ public partial class MainWindowViewModel : ViewModelBase
         var path = await OpenFileDialog();
         if (path == null) return;
 
-        try
+        var content = await SafeReadFileAsync(path);
+        if (content != null)
         {
-            MarkdownText = await File.ReadAllTextAsync(path);
+            MarkdownText = content;
             CurrentFilePath = path;
             IsModified = false;
             AddToRecentFiles(path);
             StatusText = $"Opened: {Path.GetFileName(path)}";
-        }
-        catch (Exception ex)
-        {
-            if (ShowMessageDialog != null)
-                await ShowMessageDialog("Error", $"Failed to open file: {ex.Message}");
         }
     }
 
     [RelayCommand]
     private async Task OpenRecentFile(string path)
     {
-        if (!File.Exists(path))
+        if (!await HandleUnsavedChangesAsync()) return;
+
+        var content = await SafeReadFileAsync(path);
+        if (content == null)
         {
             RecentFiles.Remove(path);
             SaveSettings();
-            if (ShowMessageDialog != null)
-                await ShowMessageDialog("File Not Found", $"The file no longer exists:\n{path}");
             return;
         }
 
-        if (!await HandleUnsavedChangesAsync()) return;
-
-        try
-        {
-            MarkdownText = await File.ReadAllTextAsync(path);
-            CurrentFilePath = path;
-            IsModified = false;
-            AddToRecentFiles(path);
-            StatusText = $"Opened: {Path.GetFileName(path)}";
-        }
-        catch (Exception ex)
-        {
-            if (ShowMessageDialog != null)
-                await ShowMessageDialog("Error", $"Failed to open file: {ex.Message}");
-        }
+        MarkdownText = content;
+        CurrentFilePath = path;
+        IsModified = false;
+        AddToRecentFiles(path);
+        StatusText = $"Opened: {Path.GetFileName(path)}";
     }
 
     [RelayCommand]
