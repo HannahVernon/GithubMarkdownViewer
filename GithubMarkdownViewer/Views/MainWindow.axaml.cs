@@ -296,7 +296,8 @@ public partial class MainWindow : Window
 
                 // Alt+Left / Alt+Right and mouse back/forward for navigation
                 KeyDown += OnNavigationKeyDown;
-                PointerPressed += OnNavigationPointerPressed;
+                AddHandler(PointerPressedEvent, OnNavigationPointerPressed,
+                    Avalonia.Interactivity.RoutingStrategies.Tunnel);
 
                 // Try to reopen last document; fall back to sample content
                 _ = InitContentAsync(vm);
