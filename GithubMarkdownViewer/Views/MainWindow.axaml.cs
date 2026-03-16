@@ -90,6 +90,49 @@ public partial class MainWindow : Window
         if (vm.CurrentFilePath == null)
             vm.LoadSampleContent();
         UpdatePreview(vm.MarkdownText);
+
+        // Check file association on Windows
+        await CheckFileAssociationAsync(vm);
+    }
+
+    private async Task CheckFileAssociationAsync(MainWindowViewModel vm)
+    {
+        try
+        {
+            if (vm.DeclinedFileAssociation)
+                return;
+
+            if (FileAssociationService.IsAssociated())
+                return;
+
+            var result = await ConfirmAsync(
+                "Markdown (.md) files are not currently associated with this application.\n\n" +
+                "Would you like to associate .md files with GitHub Markdown Viewer so you can open them by double-clicking?");
+
+            if (result)
+            {
+                var success = FileAssociationService.Associate();
+                if (success)
+                {
+                    await ShowMessageAsync("File Association",
+                        "The .md file extension has been associated with GitHub Markdown Viewer.");
+                }
+                else
+                {
+                    await ShowMessageAsync("File Association",
+                        "Failed to set the file association. Check the application log for details.");
+                }
+            }
+            else
+            {
+                vm.DeclinedFileAssociation = true;
+                vm.SaveSettingsOnExit();
+            }
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Error("File association check failed", ex);
+        }
     }
 
     // ── Recent files menu ─────────────────────────────────────────────
@@ -194,6 +237,8 @@ public partial class MainWindow : Window
                 _ = InitContentAsync(vm);
 
                 _renderer.SetFont(vm.FontFamilyName, vm.FontSizePx);
+                _renderer.SetWordWrap(vm.WordWrap);
+                UpdateWordWrapMenuItem(vm.WordWrap);
                 UpdatePreview(vm.MarkdownText);
                 UpdateLayout(vm);
                 AppLogger.Info("MainWindow initialized successfully");
@@ -320,6 +365,14 @@ public partial class MainWindow : Window
                 _renderer?.SetFont(vm.FontFamilyName, vm.FontSizePx);
                 UpdatePreview(vm.MarkdownText);
             }
+
+            // Word wrap toggle: update renderer and re-render
+            if (e.PropertyName is nameof(MainWindowViewModel.WordWrap))
+            {
+                _renderer?.SetWordWrap(vm.WordWrap);
+                UpdateWordWrapMenuItem(vm.WordWrap);
+                UpdatePreview(vm.MarkdownText);
+            }
         }
         catch (Exception ex)
         {
@@ -375,6 +428,15 @@ public partial class MainWindow : Window
             cols[2].Width = new GridLength(1, GridUnitType.Star);
             PaneSplitter.IsVisible = false;
         }
+    }
+
+    private void UpdateWordWrapMenuItem(bool wordWrap)
+    {
+        WordWrapMenuItem.Header = wordWrap ? "✓ _Word Wrap" : "  _Word Wrap";
+        // When wrapping, disable horizontal scroll so text has a width constraint to wrap against
+        PreviewScrollViewer.HorizontalScrollBarVisibility =
+            wordWrap ? Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled
+                     : Avalonia.Controls.Primitives.ScrollBarVisibility.Auto;
     }
 
     private static readonly FilePickerFileType MarkdownFileType = new("Markdown Files")
@@ -690,6 +752,7 @@ public partial class MainWindow : Window
             Width = 80,
             IsDefault = true,
             HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+            HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center,
         };
 
         var content = new StackPanel
@@ -727,7 +790,7 @@ public partial class MainWindow : Window
         var dialog = new Window
         {
             Title = "About GitHub Markdown Viewer",
-            Width = 420,
+            Width = 480,
             Height = 320,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             CanResize = false,

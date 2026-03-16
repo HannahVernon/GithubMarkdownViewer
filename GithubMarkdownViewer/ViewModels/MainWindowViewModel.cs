@@ -37,6 +37,9 @@ public partial class MainWindowViewModel : ViewModelBase
     private bool _showPreview = true;
 
     [ObservableProperty]
+    private bool _wordWrap = true;
+
+    [ObservableProperty]
     private string _statusText = "Ready";
 
     // ── Font settings ─────────────────────────────────────────────────
@@ -96,6 +99,11 @@ public partial class MainWindowViewModel : ViewModelBase
     public Action? ExitApplication { get; set; }
     public Func<string, double, Task<(string fontFamily, double sizePt)?>>? FontPickerDialog { get; set; }
 
+    /// <summary>
+    /// File path passed via command-line argument (e.g. double-click from shell).
+    /// </summary>
+    public string? StartupFilePath { get; set; }
+
     [RelayCommand]
     private async Task ChangeFont()
     {
@@ -117,6 +125,8 @@ public partial class MainWindowViewModel : ViewModelBase
         FontSizePt = settings.FontSizePt;
         ShowEditor = settings.ShowEditor;
         ShowPreview = settings.ShowPreview;
+        WordWrap = settings.WordWrap;
+        DeclinedFileAssociation = settings.DeclinedFileAssociation;
 
         // Restore recent files list (only files that still exist)
         RecentFiles.Clear();
@@ -125,24 +135,33 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Tries to reopen the last document from the previous session.
+    /// Tries to open a startup file (command-line arg) or the last document from the previous session.
     /// Call after LoadSettings and initial UI setup.
     /// </summary>
     public async Task TryReopenLastFileAsync()
     {
-        var settings = SettingsService.Load();
-        if (!string.IsNullOrEmpty(settings.LastOpenFilePath) && File.Exists(settings.LastOpenFilePath))
+        // Command-line file takes priority (e.g. double-click from shell)
+        var fileToOpen = StartupFilePath;
+
+        if (string.IsNullOrEmpty(fileToOpen) || !File.Exists(fileToOpen))
+        {
+            var settings = SettingsService.Load();
+            fileToOpen = settings.LastOpenFilePath;
+        }
+
+        if (!string.IsNullOrEmpty(fileToOpen) && File.Exists(fileToOpen))
         {
             try
             {
-                MarkdownText = await File.ReadAllTextAsync(settings.LastOpenFilePath);
-                CurrentFilePath = settings.LastOpenFilePath;
+                MarkdownText = await File.ReadAllTextAsync(fileToOpen);
+                CurrentFilePath = fileToOpen;
                 IsModified = false;
-                StatusText = $"Reopened: {Path.GetFileName(settings.LastOpenFilePath)}";
+                AddToRecentFiles(fileToOpen);
+                StatusText = $"Opened: {Path.GetFileName(fileToOpen)}";
             }
             catch (Exception ex)
             {
-                AppLogger.Error("Failed to reopen last file", ex);
+                AppLogger.Error("Failed to reopen file", ex);
             }
         }
     }
@@ -157,6 +176,8 @@ public partial class MainWindowViewModel : ViewModelBase
             RecentFiles = RecentFiles.ToList(),
             ShowEditor = ShowEditor,
             ShowPreview = ShowPreview,
+            WordWrap = WordWrap,
+            DeclinedFileAssociation = DeclinedFileAssociation,
             WindowX = WindowX,
             WindowY = WindowY,
             WindowWidth = WindowWidth,
@@ -177,6 +198,10 @@ public partial class MainWindowViewModel : ViewModelBase
     public double? WindowHeight { get; set; }
     [System.Text.Json.Serialization.JsonIgnore]
     public string? WindowState { get; set; }
+
+    // ── File association ─────────────────────────────────────────────
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool DeclinedFileAssociation { get; set; }
 
     private void AddToRecentFiles(string filePath)
     {
@@ -414,6 +439,13 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         ShowEditor = false;
         ShowPreview = true;
+    }
+
+    [RelayCommand]
+    private void ToggleWordWrap()
+    {
+        WordWrap = !WordWrap;
+        SaveSettings();
     }
 
     public void LoadSampleContent()

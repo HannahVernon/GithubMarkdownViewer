@@ -33,6 +33,12 @@ public class AppSettings
     [JsonPropertyName("showPreview")]
     public bool ShowPreview { get; set; } = true;
 
+    [JsonPropertyName("wordWrap")]
+    public bool WordWrap { get; set; } = true;
+
+    [JsonPropertyName("declinedFileAssociation")]
+    public bool DeclinedFileAssociation { get; set; } = false;
+
     // ── Window state ──────────────────────────────────────────────────
 
     [JsonPropertyName("windowX")]

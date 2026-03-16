@@ -42,6 +42,8 @@
                 <MenuItem Header="_Split View" Command="{Binding ViewSplitCommand}" />
                 <MenuItem Header="_Editor Only" Command="{Binding ViewEditorOnlyCommand}" />
                 <MenuItem Header="_Preview Only" Command="{Binding ViewPreviewOnlyCommand}" />
+                <Separator />
+                <MenuItem Header="_Word Wrap" Command="{Binding ToggleWordWrapCommand}" Name="WordWrapMenuItem" />
             </MenuItem>
             <MenuItem Header="F_ormat">
                 <MenuItem Header="_Font..." Command="{Binding ChangeFontCommand}" />

@@ -36,9 +36,17 @@ public partial class App : Application
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             DisableAvaloniaDataAnnotationValidation();
+            var vm = new MainWindowViewModel();
+
+            // If a file was passed as a command-line argument, set it for opening
+            if (desktop.Args is { Length: > 0 } && !string.IsNullOrEmpty(desktop.Args[0]))
+            {
+                vm.StartupFilePath = desktop.Args[0];
+            }
+
             desktop.MainWindow = new MainWindow
             {
-                DataContext = new MainWindowViewModel(),
+                DataContext = vm,
             };
             AppLogger.Info("Main window created");
         }

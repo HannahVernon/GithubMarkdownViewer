@@ -70,6 +70,7 @@ public class MarkdownToAvaloniaRenderer
     private FontFamily _bodyFont = new("Inter, Segoe UI, sans-serif");
     private FontFamily _monoFont = new("Cascadia Code, Consolas, Menlo, monospace");
     private double _baseFontSize = 13.33; // 10pt in px
+    private TextWrapping _bodyTextWrapping = TextWrapping.Wrap;
 
     public MarkdownToAvaloniaRenderer(MarkdownPipeline pipeline)
     {
@@ -84,6 +85,15 @@ public class MarkdownToAvaloniaRenderer
         _bodyFont = new FontFamily($"{fontFamilyName}, Inter, Segoe UI, Noto Sans, Helvetica, Arial, sans-serif");
         _monoFont = new FontFamily($"{fontFamilyName}, Cascadia Code, Consolas, Menlo, Monaco, Courier New, monospace");
         _baseFontSize = baseFontSizePx;
+    }
+
+    /// <summary>
+    /// Sets whether body text in the preview wraps or scrolls horizontally.
+    /// Code blocks always use NoWrap regardless of this setting.
+    /// </summary>
+    public void SetWordWrap(bool wrap)
+    {
+        _bodyTextWrapping = wrap ? TextWrapping.Wrap : TextWrapping.NoWrap;
     }
 
     private void ApplyThemePalette()
@@ -214,7 +224,7 @@ public class MarkdownToAvaloniaRenderer
             FontWeight = weight,
             FontFamily = _bodyFont,
             Foreground = _defaultForeground,
-            TextWrapping = TextWrapping.Wrap,
+            TextWrapping = _bodyTextWrapping,
             Margin = new Thickness(0, 16, 0, 8),
         };
         SetInlines(tb, heading.Inline);
@@ -241,7 +251,7 @@ public class MarkdownToAvaloniaRenderer
             FontSize = _baseFontSize,
             FontFamily = _bodyFont,
             Foreground = _defaultForeground,
-            TextWrapping = TextWrapping.Wrap,
+            TextWrapping = _bodyTextWrapping,
             Margin = new Thickness(0, 0, 0, 12),
             LineHeight = _baseFontSize * 1.6,
         };
@@ -300,7 +310,8 @@ public class MarkdownToAvaloniaRenderer
 
         foreach (var item in list.OfType<ListItemBlock>())
         {
-            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+            // Use DockPanel so the content fills remaining width and can wrap
+            var row = new DockPanel();
 
             // Check for task list
             var firstParagraph = item.OfType<ParagraphBlock>().FirstOrDefault();
@@ -308,20 +319,22 @@ public class MarkdownToAvaloniaRenderer
 
             if (taskListInline != null)
             {
-                row.Children.Add(new CheckBox
+                var cb = new CheckBox
                 {
                     IsChecked = taskListInline.Checked,
                     IsEnabled = false,
-                    VerticalAlignment = VerticalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Top,
                     Margin = new Thickness(0, 0, 2, 0),
-                });
+                };
+                DockPanel.SetDock(cb, Dock.Left);
+                row.Children.Add(cb);
             }
             else
             {
                 var bullet = list.IsOrdered
                     ? $"{index}."
                     : "•";
-                row.Children.Add(new TextBlock
+                var bulletBlock = new TextBlock
                 {
                     Text = bullet,
                     FontSize = _baseFontSize,
@@ -329,9 +342,11 @@ public class MarkdownToAvaloniaRenderer
                     Foreground = _defaultForeground,
                     MinWidth = list.IsOrdered ? 24 : 16,
                     TextAlignment = TextAlignment.Right,
-                    Margin = new Thickness(0, 0, 4, 0),
+                    Margin = new Thickness(0, 0, 6, 0),
                     VerticalAlignment = VerticalAlignment.Top,
-                });
+                };
+                DockPanel.SetDock(bulletBlock, Dock.Left);
+                row.Children.Add(bulletBlock);
             }
 
             var content = new StackPanel { Spacing = 2 };
@@ -339,7 +354,6 @@ public class MarkdownToAvaloniaRenderer
             {
                 foreach (var control in RenderBlock(childBlock))
                 {
-                    // Remove task list checkbox inline from the text since we rendered it separately
                     content.Children.Add(control);
                 }
             }
@@ -438,7 +452,7 @@ public class MarkdownToAvaloniaRenderer
             FontSize = _baseFontSize * 0.85,
             FontFamily = _monoFont,
             Foreground = _quoteForeground,
-            TextWrapping = TextWrapping.Wrap,
+            TextWrapping = _bodyTextWrapping,
             Margin = new Thickness(0, 0, 0, 12),
         };
     }
