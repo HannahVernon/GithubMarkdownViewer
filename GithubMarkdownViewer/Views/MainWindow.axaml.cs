@@ -251,8 +251,9 @@ public partial class MainWindow : Window
                 if (_forwardButton != null)
                     _forwardButton.Click += async (_, _) => await NavigateForwardAsync();
 
-                // Alt+Left / Alt+Right for navigation
+                // Alt+Left / Alt+Right and mouse back/forward for navigation
                 KeyDown += OnNavigationKeyDown;
+                PointerPressed += OnNavigationPointerPressed;
 
                 // Try to reopen last document; fall back to sample content
                 _ = InitContentAsync(vm);
@@ -637,6 +638,21 @@ public partial class MainWindow : Window
             _ = NavigateBackAsync();
         }
         else if (e.Key == Avalonia.Input.Key.Right && _forwardStack.Count > 0)
+        {
+            e.Handled = true;
+            _ = NavigateForwardAsync();
+        }
+    }
+
+    private void OnNavigationPointerPressed(object? sender, Avalonia.Input.PointerPressedEventArgs e)
+    {
+        var props = e.GetCurrentPoint(this).Properties;
+        if (props.IsXButton1Pressed && _backStack.Count > 0)
+        {
+            e.Handled = true;
+            _ = NavigateBackAsync();
+        }
+        else if (props.IsXButton2Pressed && _forwardStack.Count > 0)
         {
             e.Handled = true;
             _ = NavigateForwardAsync();

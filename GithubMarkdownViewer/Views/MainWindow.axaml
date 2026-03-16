@@ -54,7 +54,7 @@
         </Menu>
 
         <!-- Navigation Toolbar -->
-        <Border DockPanel.Dock="Top" Background="#f6f8fa" BorderBrush="#d1d9e0" BorderThickness="0,0,0,1" Padding="4,2">
+        <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}" BorderThickness="0,0,0,1" Padding="4,2">
             <StackPanel Orientation="Horizontal" Spacing="2">
                 <Button Name="NavBackButton" Content="◀ Back" FontSize="12" Padding="8,3"
                         IsEnabled="False" ToolTip.Tip="Navigate back (Alt+Left)" />
@@ -64,8 +64,8 @@
         </Border>
 
         <!-- Status Bar -->
-        <Border DockPanel.Dock="Bottom" Background="#f6f8fa" BorderBrush="#d1d9e0" BorderThickness="0,1,0,0" Padding="10,4">
-            <TextBlock Text="{Binding StatusText}" FontSize="12" Foreground="#656d76" />
+        <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}" BorderThickness="0,1,0,0" Padding="10,4">
+            <TextBlock Text="{Binding StatusText}" FontSize="12" Opacity="0.6" />
         </Border>
 
         <!-- Main Content: Editor + Preview split -->
