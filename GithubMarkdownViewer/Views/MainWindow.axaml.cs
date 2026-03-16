@@ -187,6 +187,9 @@ public partial class MainWindow : Window
                 vm.RecentFiles.CollectionChanged += OnRecentFilesChanged;
                 RebuildRecentFilesMenu(vm);
 
+                // Wire up About menu
+                AboutMenuItem.Click += async (_, _) => await ShowAboutDialogAsync();
+
                 // Try to reopen last document; fall back to sample content
                 _ = InitContentAsync(vm);
 
@@ -641,5 +644,97 @@ public partial class MainWindow : Window
 
         await dialog.ShowDialog(this);
         return result;
+    }
+
+    private async Task ShowAboutDialogAsync()
+    {
+        const string repoUrl = "https://github.com/HannahVernon/GithubMarkdownViewer";
+
+        Image? icon = null;
+        try
+        {
+            var uri = new Uri("avares://GithubMarkdownViewer/Assets/app-icon.ico");
+            using var stream = Avalonia.Platform.AssetLoader.Open(uri);
+            var bitmap = new Avalonia.Media.Imaging.Bitmap(stream);
+            icon = new Image { Source = bitmap, Width = 64, Height = 64, Margin = new Thickness(0, 0, 0, 12) };
+        }
+        catch
+        {
+            // Skip icon if loading fails
+        }
+
+        var linkText = new TextBlock
+        {
+            Text = repoUrl,
+            Foreground = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#0969da")),
+            Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
+            TextDecorations = Avalonia.Media.TextDecorations.Underline,
+            Margin = new Thickness(0, 8, 0, 0),
+        };
+        linkText.PointerPressed += (_, _) =>
+        {
+            try
+            {
+                var psi = new System.Diagnostics.ProcessStartInfo(repoUrl) { UseShellExecute = true };
+                System.Diagnostics.Process.Start(psi);
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Error("Failed to open URL", ex);
+            }
+        };
+
+        var okButton = new Button
+        {
+            Content = "OK",
+            Width = 80,
+            IsDefault = true,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+        };
+
+        var content = new StackPanel
+        {
+            Margin = new Thickness(24),
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+        };
+        if (icon != null) content.Children.Add(icon);
+        content.Children.Add(new TextBlock
+        {
+            Text = "GitHub Markdown Viewer",
+            FontSize = 18,
+            FontWeight = Avalonia.Media.FontWeight.Bold,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+        });
+        content.Children.Add(new TextBlock
+        {
+            Text = "Version 1.0.0",
+            FontSize = 12,
+            Foreground = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#656d76")),
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+            Margin = new Thickness(0, 4, 0, 12),
+        });
+        content.Children.Add(new TextBlock
+        {
+            Text = "A cross-platform .NET 9 markdown editor with live preview\nand full GitHub Flavored Markdown support.\n\nBuilt with Avalonia UI and Markdig.",
+            TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+            TextAlignment = Avalonia.Media.TextAlignment.Center,
+            LineHeight = 20,
+        });
+        content.Children.Add(linkText);
+        content.Children.Add(new Border { Height = 16 });
+        content.Children.Add(okButton);
+
+        var dialog = new Window
+        {
+            Title = "About GitHub Markdown Viewer",
+            Width = 420,
+            Height = 320,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            CanResize = false,
+            Content = content,
+        };
+
+        okButton.Click += (_, _) => dialog.Close();
+        await dialog.ShowDialog(this);
     }
 }
