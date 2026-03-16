@@ -2,7 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.ComponentModel;
+using System.Diagnostics;
+using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
@@ -194,6 +197,7 @@ public partial class MainWindow : Window
             {
                 _renderer = new MarkdownToAvaloniaRenderer(
                     new MarkdownService().Pipeline);
+                _renderer.LinkClicked += OnRendererLinkClicked;
 
                 vm.OpenFileDialog = OpenFileDialogAsync;
                 vm.SaveFileDialog = SaveFileDialogAsync;
@@ -401,6 +405,116 @@ public partial class MainWindow : Window
                 TextWrapping = Avalonia.Media.TextWrapping.Wrap,
                 Margin = new Thickness(8),
             });
+        }
+    }
+
+    // ── Link click handling ─────────────────────────────────────────
+
+    private void OnRendererLinkClicked(string url)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(url)) return;
+
+            // Check if this is a relative .md link (not a full URL)
+            if (IsRelativeMarkdownLink(url))
+            {
+                _ = OpenRelativeMarkdownFileAsync(url);
+                return;
+            }
+
+            // For absolute URLs, open in the default browser
+            if (Uri.TryCreate(url, UriKind.Absolute, out var uri)
+                && (uri.Scheme == "http" || uri.Scheme == "https"))
+            {
+                OpenUrlInBrowser(url);
+            }
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Error($"Failed to handle link click: {url}", ex);
+        }
+    }
+
+    private static bool IsRelativeMarkdownLink(string url)
+    {
+        // Skip absolute URLs and anchors
+        if (url.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            || url.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+            || url.StartsWith("mailto:", StringComparison.OrdinalIgnoreCase)
+            || url.StartsWith('#'))
+            return false;
+
+        // Strip any fragment (e.g. "file.md#section")
+        var pathPart = url.Split('#')[0];
+        return pathPart.EndsWith(".md", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task OpenRelativeMarkdownFileAsync(string relativeUrl)
+    {
+        if (DataContext is not MainWindowViewModel vm) return;
+
+        // Strip fragment
+        var pathPart = relativeUrl.Split('#')[0];
+
+        // URL-decode (e.g. %20 → space)
+        pathPart = Uri.UnescapeDataString(pathPart);
+
+        // Resolve relative to the directory of the currently open file
+        string? resolvedPath = null;
+        if (!string.IsNullOrEmpty(vm.CurrentFilePath))
+        {
+            var dir = Path.GetDirectoryName(vm.CurrentFilePath);
+            if (dir != null)
+                resolvedPath = Path.GetFullPath(Path.Combine(dir, pathPart));
+        }
+
+        if (resolvedPath == null || !File.Exists(resolvedPath))
+        {
+            await ShowMessageAsync("File Not Found",
+                $"Could not find the linked file:\n{pathPart}");
+            return;
+        }
+
+        // Prompt to save unsaved changes before navigating
+        if (vm.IsModified)
+        {
+            var canProceed = await vm.HandleUnsavedChangesAsync();
+            if (!canProceed) return;
+        }
+
+        // Open the linked .md file
+        try
+        {
+            var content = await File.ReadAllTextAsync(resolvedPath);
+            vm.MarkdownText = content;
+            vm.CurrentFilePath = resolvedPath;
+            vm.IsModified = false;
+            vm.AddToRecentFiles(resolvedPath);
+            vm.StatusText = $"Opened: {Path.GetFileName(resolvedPath)}";
+            UpdatePreview(content);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Error($"Failed to open linked file: {resolvedPath}", ex);
+            await ShowMessageAsync("Error", $"Failed to open file:\n{ex.Message}");
+        }
+    }
+
+    private static void OpenUrlInBrowser(string url)
+    {
+        try
+        {
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+            else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+                Process.Start("open", url);
+            else
+                Process.Start("xdg-open", url);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Error($"Failed to open URL in browser: {url}", ex);
         }
     }
 

@@ -203,7 +203,7 @@ public partial class MainWindowViewModel : ViewModelBase
     [System.Text.Json.Serialization.JsonIgnore]
     public bool DeclinedFileAssociation { get; set; }
 
-    private void AddToRecentFiles(string filePath)
+    public void AddToRecentFiles(string filePath)
     {
         // Remove if already present, then insert at top
         var existing = RecentFiles.FirstOrDefault(

@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Documents;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Styling;
@@ -76,6 +78,12 @@ public class MarkdownToAvaloniaRenderer
     {
         _pipeline = pipeline;
     }
+
+    /// <summary>
+    /// Raised when the user clicks a link in the rendered preview.
+    /// The string argument is the link URL (may be relative or absolute).
+    /// </summary>
+    public event Action<string>? LinkClicked;
 
     /// <summary>
     /// Updates font settings used by subsequent Render calls.
@@ -517,35 +525,39 @@ public class MarkdownToAvaloniaRenderer
 
             case LinkInline link:
             {
-                // Render link text with blue color
+                if (link.IsImage)
+                {
+                    // Images: just show alt text for now
+                    var altText = link.FirstChild?.ToString() ?? link.Url ?? "";
+                    yield return new Run($"[Image: {altText}]")
+                    {
+                        Foreground = _quoteForeground,
+                        FontStyle = FontStyle.Italic,
+                    };
+                    break;
+                }
+
+                // Build display text from children
+                var linkText = "";
                 foreach (var child in link)
                 {
-                    foreach (var run in ConvertInline(child))
-                    {
-                        if (run is Avalonia.Controls.Documents.Run r)
-                        {
-                            r.Foreground = _linkForeground;
-                            // Underline not easily supported in Run; color is sufficient
-                        }
-                        yield return run;
-                    }
+                    if (child is LiteralInline lit)
+                        linkText += lit.Content.ToString();
+                    else if (child is CodeInline ci)
+                        linkText += ci.Content;
+                    else
+                        linkText += child.ToString();
                 }
-                // If no children (e.g. bare URL), show the URL text
-                if (!link.Any())
-                {
-                    yield return new Avalonia.Controls.Documents.Run(link.Url ?? "")
-                    {
-                        Foreground = _linkForeground,
-                    };
-                }
+                if (string.IsNullOrEmpty(linkText))
+                    linkText = link.Url ?? "";
+
+                var url = link.Url ?? "";
+                yield return CreateClickableLink(linkText, url);
                 break;
             }
 
             case AutolinkInline autolink:
-                yield return new Avalonia.Controls.Documents.Run(autolink.Url)
-                {
-                    Foreground = _linkForeground,
-                };
+                yield return CreateClickableLink(autolink.Url, autolink.Url);
                 break;
 
             case LineBreakInline:
@@ -572,8 +584,36 @@ public class MarkdownToAvaloniaRenderer
                 break;
 
             default:
-                yield return new Avalonia.Controls.Documents.Run(inline.ToString() ?? "");
+                yield return new Run(inline.ToString() ?? "");
                 break;
         }
+    }
+
+    /// <summary>
+    /// Creates a clickable inline link that raises <see cref="LinkClicked"/> when clicked.
+    /// Uses an InlineUIContainer wrapping a TextBlock styled as a hyperlink.
+    /// </summary>
+    private InlineUIContainer CreateClickableLink(string displayText, string url)
+    {
+        var tb = new TextBlock
+        {
+            Text = displayText,
+            Foreground = _linkForeground,
+            TextDecorations = TextDecorations.Underline,
+            Cursor = new Cursor(StandardCursorType.Hand),
+            FontFamily = _bodyFont,
+            FontSize = _baseFontSize,
+            TextWrapping = _bodyTextWrapping,
+        };
+        ToolTip.SetTip(tb, url);
+
+        var capturedUrl = url;
+        tb.PointerPressed += (_, e) =>
+        {
+            e.Handled = true;
+            LinkClicked?.Invoke(capturedUrl);
+        };
+
+        return new InlineUIContainer { Child = tb };
     }
 }
