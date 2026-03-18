@@ -6,6 +6,12 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\app-icon.ico</ApplicationIcon>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <AssemblyName>GithubMarkdownViewer</AssemblyName>
+    <Product>GitHub Markdown Viewer</Product>
+    <Description>A cross-platform Markdown viewer and editor with GitHub Flavored Markdown support</Description>
+    <Company>Hannah Vernon</Company>
+    <Copyright>Copyright © 2026 Hannah Vernon</Copyright>
+    <Version>1.0.0</Version>
   </PropertyGroup>
 
   <ItemGroup>
