@@ -4,6 +4,7 @@
 # Prerequisites: Run publish.ps1 -Runtime linux-x64 first (or use dotnet publish)
 
 set -euo pipefail
+umask 077
 
 APP_NAME="github-markdown-viewer"
 APP_DISPLAY_NAME="GitHub Markdown Viewer"

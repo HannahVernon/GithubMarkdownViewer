@@ -50,14 +50,31 @@ public partial class MainWindow : Window
                     vm.IsModified = false;
                     CaptureWindowState(vm);
                     vm.SaveSettingsOnExit();
+                    CleanupEventHandlers(vm);
                     Close();
                 }
                 return;
             }
             CaptureWindowState(vm);
             vm.SaveSettingsOnExit();
+            CleanupEventHandlers(vm);
         }
         base.OnClosing(e);
+    }
+
+    private void CleanupEventHandlers(MainWindowViewModel vm)
+    {
+        vm.PropertyChanged -= OnViewModelPropertyChanged;
+
+        if (_renderer != null)
+            _renderer.LinkClicked -= OnRendererLinkClicked;
+
+        if (_editorScrollViewer != null)
+            _editorScrollViewer.PropertyChanged -= OnEditorScrollPropertyChanged;
+
+        PreviewScrollViewer.PropertyChanged -= OnPreviewScrollPropertyChanged;
+
+        RemoveHandler(PointerPressedEvent, OnNavigationPointerPressed);
     }
 
     private void CaptureWindowState(MainWindowViewModel vm)
@@ -464,7 +481,7 @@ public partial class MainWindow : Window
             PreviewPanel.Children.Clear();
             PreviewPanel.Children.Add(new TextBlock
             {
-                Text = $"Preview error: {ex.Message}",
+                Text = "An error occurred while rendering the preview.",
                 Foreground = Avalonia.Media.Brushes.Red,
                 TextWrapping = Avalonia.Media.TextWrapping.Wrap,
                 Margin = new Thickness(8),
@@ -492,6 +509,10 @@ public partial class MainWindow : Window
                 && (uri.Scheme == "http" || uri.Scheme == "https"))
             {
                 OpenUrlInBrowser(url);
+            }
+            else
+            {
+                AppLogger.Warn($"Blocked link with unsupported scheme: {uri?.Scheme ?? "unknown"}");
             }
         }
         catch (Exception ex)
@@ -606,7 +627,7 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             AppLogger.Error("Failed to open linked file", ex);
-            await ShowMessageAsync("Error", $"Failed to open file:\n{ex.Message}");
+            await ShowMessageAsync("Error", "An error occurred while opening the linked file.");
         }
     }
 
@@ -693,6 +714,13 @@ public partial class MainWindow : Window
 
     private async Task NavigateToFileAsync(MainWindowViewModel vm, string filePath)
     {
+        // Block UNC paths
+        if (filePath.StartsWith(@"\\", StringComparison.Ordinal))
+        {
+            await ShowMessageAsync("Security Warning", "Cannot open files from network paths.");
+            return;
+        }
+
         if (!File.Exists(filePath))
         {
             await ShowMessageAsync("File Not Found",
@@ -721,7 +749,7 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             AppLogger.Error("Failed to navigate to file", ex);
-            await ShowMessageAsync("Error", $"Failed to open file:\n{ex.Message}");
+            await ShowMessageAsync("Error", "An error occurred while opening the file.");
         }
     }
 
