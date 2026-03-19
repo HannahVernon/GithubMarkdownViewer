@@ -39,3 +39,9 @@ Thumbs.db
 node_modules/
 package.json
 package-lock.json
+
+# Installer build artifacts
+installer/publish/
+installer/output/
+installer/staging-*/
+installer/rpmbuild/
