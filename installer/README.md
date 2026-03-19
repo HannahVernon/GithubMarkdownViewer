@@ -84,6 +84,25 @@ bash installer/macos/build-dmg.sh
 
 The `.dmg` includes a drag-and-drop install with an Applications folder shortcut.
 
+#### Code Signing (Recommended for Distribution)
+
+To sign the `.app` bundle for distribution outside the Mac App Store:
+
+```bash
+# Set your signing identity
+export CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)"
+
+# Build — signing happens automatically when CODESIGN_IDENTITY is set
+bash installer/macos/build-dmg.sh
+
+# Notarize for Gatekeeper
+xcrun notarytool submit installer/output/GithubMarkdownViewer-1.0.0-osx-x64.dmg \
+    --apple-id YOUR_APPLE_ID --team-id YOUR_TEAM_ID --wait
+xcrun stapler staple installer/output/GithubMarkdownViewer-1.0.0-osx-x64.dmg
+```
+
+> **Note:** Without code signing, macOS users will see Gatekeeper warnings. The build script will print a reminder if `CODESIGN_IDENTITY` is not set.
+
 ## Output
 
 All installer artifacts are written to `installer/output/`:

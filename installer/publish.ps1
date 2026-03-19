@@ -16,6 +16,14 @@ $RepoRoot = Split-Path -Parent $PSScriptRoot
 $ProjectPath = Join-Path $RepoRoot "GithubMarkdownViewer" "GithubMarkdownViewer.csproj"
 $PublishBase = Join-Path $PSScriptRoot "publish"
 
+# Resolve dotnet to full path to prevent PATH hijacking
+$dotnetCmd = Get-Command dotnet -ErrorAction SilentlyContinue
+if (-not $dotnetCmd) {
+    Write-Error "dotnet SDK not found on PATH"
+    exit 1
+}
+$DotnetPath = $dotnetCmd.Source
+
 $Runtimes = @("win-x64", "linux-x64", "osx-x64")
 if ($Runtime -ne "") {
     $Runtimes = @($Runtime)
@@ -25,7 +33,7 @@ foreach ($rid in $Runtimes) {
     $outDir = Join-Path $PublishBase $rid
     Write-Host "Publishing for $rid -> $outDir" -ForegroundColor Cyan
 
-    dotnet publish $ProjectPath `
+    & $DotnetPath publish $ProjectPath `
         --configuration Release `
         --runtime $rid `
         --self-contained true `

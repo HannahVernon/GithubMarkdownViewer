@@ -6,6 +6,7 @@
 #   - rpm-build package installed (sudo dnf install rpm-build)
 
 set -euo pipefail
+umask 077
 
 APP_NAME="github-markdown-viewer"
 APP_DISPLAY_NAME="GitHub Markdown Viewer"
@@ -35,12 +36,12 @@ mkdir -p "$OUTPUT_DIR"
 
 # Create the spec file
 cat > "$RPM_BUILD_ROOT/SPECS/$APP_NAME.spec" << EOF
-Name:           $APP_NAME
-Version:        $APP_VERSION
-Release:        $APP_RELEASE%{?dist}
-Summary:        $APP_DESCRIPTION
+Name:           ${APP_NAME}
+Version:        ${APP_VERSION}
+Release:        ${APP_RELEASE}%{?dist}
+Summary:        ${APP_DESCRIPTION}
 License:        MIT
-URL:            $APP_URL
+URL:            ${APP_URL}
 BuildArch:      x86_64
 AutoReqProv:    no
 
@@ -50,20 +51,20 @@ Markdown files with live preview and full GitHub Flavored Markdown
 (GFM) support. Built with Avalonia UI and Markdig.
 
 %install
-mkdir -p %{buildroot}/usr/lib/$APP_NAME
-cp -r $PUBLISH_DIR/* %{buildroot}/usr/lib/$APP_NAME/
-chmod +x %{buildroot}/usr/lib/$APP_NAME/GithubMarkdownViewer
+mkdir -p %{buildroot}/usr/lib/${APP_NAME}
+cp -r "${PUBLISH_DIR}"/* %{buildroot}/usr/lib/${APP_NAME}/
+chmod +x %{buildroot}/usr/lib/${APP_NAME}/GithubMarkdownViewer
 
 mkdir -p %{buildroot}/usr/bin
-ln -sf /usr/lib/$APP_NAME/GithubMarkdownViewer %{buildroot}/usr/bin/$APP_NAME
+ln -sf /usr/lib/${APP_NAME}/GithubMarkdownViewer %{buildroot}/usr/bin/${APP_NAME}
 
 mkdir -p %{buildroot}/usr/share/applications
-cat > %{buildroot}/usr/share/applications/$APP_NAME.desktop << DESKTOP
+cat > %{buildroot}/usr/share/applications/${APP_NAME}.desktop << DESKTOP
 [Desktop Entry]
-Name=$APP_DISPLAY_NAME
-Comment=$APP_DESCRIPTION
-Exec=/usr/bin/$APP_NAME %f
-Icon=$APP_NAME
+Name=${APP_DISPLAY_NAME}
+Comment=${APP_DESCRIPTION}
+Exec=/usr/bin/${APP_NAME} %f
+Icon=${APP_NAME}
 Terminal=false
 Type=Application
 Categories=Utility;TextEditor;Development;
@@ -72,15 +73,15 @@ Keywords=markdown;md;editor;viewer;preview;github;
 StartupWMClass=GithubMarkdownViewer
 DESKTOP
 
-mkdir -p %{buildroot}/usr/share/doc/$APP_NAME
-cp $REPO_ROOT/LICENSE %{buildroot}/usr/share/doc/$APP_NAME/
-cp $REPO_ROOT/README.md %{buildroot}/usr/share/doc/$APP_NAME/
+mkdir -p %{buildroot}/usr/share/doc/${APP_NAME}
+cp "${REPO_ROOT}/LICENSE" %{buildroot}/usr/share/doc/${APP_NAME}/
+cp "${REPO_ROOT}/README.md" %{buildroot}/usr/share/doc/${APP_NAME}/
 
 %files
-/usr/lib/$APP_NAME/
-/usr/bin/$APP_NAME
-/usr/share/applications/$APP_NAME.desktop
-/usr/share/doc/$APP_NAME/
+/usr/lib/${APP_NAME}/
+/usr/bin/${APP_NAME}
+/usr/share/applications/${APP_NAME}.desktop
+/usr/share/doc/${APP_NAME}/
 
 %post
 update-desktop-database -q /usr/share/applications 2>/dev/null || true

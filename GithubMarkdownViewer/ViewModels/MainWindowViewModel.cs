@@ -244,29 +244,31 @@ public partial class MainWindowViewModel : ViewModelBase
                 return null;
             }
 
-            var info = new FileInfo(fullPath);
-            if (!info.Exists)
-            {
-                if (ShowMessageDialog != null)
-                    await ShowMessageDialog("File Not Found", $"Could not find:\n{Path.GetFileName(filePath)}");
-                return null;
-            }
+            // Open stream first, then check length — eliminates TOCTOU race
+            using var stream = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.Read);
 
-            if (info.Length > MaxFileSizeBytes)
+            if (stream.Length > MaxFileSizeBytes)
             {
                 if (ShowMessageDialog != null)
                     await ShowMessageDialog("File Too Large",
-                        $"The file is {info.Length / (1024 * 1024):N0} MB, which exceeds the 50 MB limit.");
+                        $"The file is {stream.Length / (1024 * 1024):N0} MB, which exceeds the 50 MB limit.");
                 return null;
             }
 
-            return await File.ReadAllTextAsync(fullPath);
+            using var reader = new StreamReader(stream);
+            return await reader.ReadToEndAsync();
+        }
+        catch (FileNotFoundException)
+        {
+            if (ShowMessageDialog != null)
+                await ShowMessageDialog("File Not Found", $"Could not find:\n{Path.GetFileName(filePath)}");
+            return null;
         }
         catch (Exception ex)
         {
             AppLogger.Error("Failed to read file", ex);
             if (ShowMessageDialog != null)
-                await ShowMessageDialog("Error", $"Failed to read file:\n{ex.Message}");
+                await ShowMessageDialog("Error", "An error occurred while reading the file.");
             return null;
         }
     }
@@ -350,8 +352,9 @@ public partial class MainWindowViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
+            AppLogger.Error("Failed to save file", ex);
             if (ShowMessageDialog != null)
-                await ShowMessageDialog("Error", $"Failed to save file: {ex.Message}");
+                await ShowMessageDialog("Error", "An error occurred while saving the file.");
         }
     }
 
@@ -373,8 +376,9 @@ public partial class MainWindowViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
+            AppLogger.Error("Failed to save file as", ex);
             if (ShowMessageDialog != null)
-                await ShowMessageDialog("Error", $"Failed to save file: {ex.Message}");
+                await ShowMessageDialog("Error", "An error occurred while saving the file.");
         }
     }
 
@@ -397,8 +401,9 @@ public partial class MainWindowViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
+            AppLogger.Error("Failed to export HTML", ex);
             if (ShowMessageDialog != null)
-                await ShowMessageDialog("Error", $"Failed to export HTML: {ex.Message}");
+                await ShowMessageDialog("Error", "An error occurred while exporting HTML.");
         }
     }
 

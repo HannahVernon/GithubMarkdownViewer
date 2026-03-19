@@ -83,9 +83,25 @@ public class AppSettings
         if (RecentFiles.Count > MaxRecentFiles)
             RecentFiles = RecentFiles.GetRange(0, MaxRecentFiles);
 
-        // Sanitize font family — strip any characters that aren't alphanumeric, spaces, commas, or hyphens
+        // Truncate file paths to prevent oversized settings
+        const int MaxPathLength = 32767;
+        if (LastOpenFilePath != null && LastOpenFilePath.Length > MaxPathLength)
+            LastOpenFilePath = null;
+        for (int i = RecentFiles.Count - 1; i >= 0; i--)
+        {
+            if (RecentFiles[i] != null && RecentFiles[i].Length > MaxPathLength)
+                RecentFiles.RemoveAt(i);
+        }
+
+        // Validate WindowState against known values
+        var validStates = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            { "Normal", "Minimized", "Maximized", "FullScreen" };
+        if (WindowState != null && !validStates.Contains(WindowState))
+            WindowState = "Normal";
+
+        // Sanitize font family — only allow ASCII-safe characters
         if (!string.IsNullOrEmpty(FontFamilyName) &&
-            !System.Text.RegularExpressions.Regex.IsMatch(FontFamilyName, @"^[\w\s,\-\.]+$"))
+            !System.Text.RegularExpressions.Regex.IsMatch(FontFamilyName, @"^[a-zA-Z0-9_ ,\-\.]+$"))
         {
             FontFamilyName = DefaultFontFamily;
         }

@@ -4,6 +4,7 @@
 # Prerequisites: Run publish.ps1 -Runtime osx-x64 first (or dotnet publish)
 
 set -euo pipefail
+umask 077
 
 APP_NAME="GitHub Markdown Viewer"
 APP_BUNDLE_ID="com.hannahvernon.githubmarkdownviewer"
@@ -137,6 +138,26 @@ if command -v hdiutil > /dev/null 2>&1; then
         -ov -format UDZO \
         "$DMG_PATH"
     echo "DMG created: $DMG_PATH"
+
+    # Code signing (optional but recommended for distribution)
+    # To sign the app and DMG, set the CODESIGN_IDENTITY environment variable:
+    #   export CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)"
+    if [ -n "${CODESIGN_IDENTITY:-}" ]; then
+        echo "Signing app bundle with identity: $CODESIGN_IDENTITY"
+        codesign --deep --force --options runtime \
+            --sign "$CODESIGN_IDENTITY" \
+            "$APP_BUNDLE"
+        echo "Signed: $APP_BUNDLE"
+        echo ""
+        echo "To notarize for distribution outside the Mac App Store:"
+        echo "  xcrun notarytool submit $DMG_PATH --apple-id YOUR_ID --team-id TEAM_ID --wait"
+        echo "  xcrun stapler staple $DMG_PATH"
+    else
+        echo ""
+        echo "NOTE: App bundle is NOT code-signed."
+        echo "  Set CODESIGN_IDENTITY to sign: export CODESIGN_IDENTITY='Developer ID Application: ...'"
+        echo "  Users may see Gatekeeper warnings when opening unsigned apps."
+    fi
 else
     echo "WARNING: hdiutil not available (not on macOS). Skipping DMG creation."
     echo "The .app bundle is available at: $APP_BUNDLE"
