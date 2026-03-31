@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
+using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -183,9 +184,12 @@ public partial class MainWindow : Window
             return;
         }
 
-        foreach (var path in vm.RecentFiles)
+        // Show the first N items directly in the menu
+        var menuCount = Math.Min(vm.RecentFiles.Count, AppSettings.MenuRecentFilesCount);
+        for (int i = 0; i < menuCount; i++)
         {
-            var displayName = ShortenPath(path, 30);
+            var path = vm.RecentFiles[i];
+            var displayName = path;
             var item = new MenuItem
             {
                 Header = displayName,
@@ -200,6 +204,18 @@ public partial class MainWindow : Window
             RecentFilesMenu.Items.Add(item);
         }
 
+        // "More..." item when there are additional files beyond the menu limit
+        if (vm.RecentFiles.Count > AppSettings.MenuRecentFilesCount)
+        {
+            RecentFilesMenu.Items.Add(new Separator());
+            var moreItem = new MenuItem
+            {
+                Header = $"More... ({vm.RecentFiles.Count - AppSettings.MenuRecentFilesCount} additional)",
+            };
+            moreItem.Click += async (_, _) => await ShowRecentFilesDialogAsync(vm);
+            RecentFilesMenu.Items.Add(moreItem);
+        }
+
         RecentFilesMenu.Items.Add(new Separator());
         var clearItem = new MenuItem { Header = "Clear Recent Files" };
         clearItem.Click += (_, _) =>
@@ -210,49 +226,96 @@ public partial class MainWindow : Window
         RecentFilesMenu.Items.Add(clearItem);
     }
 
-    /// <summary>
-    /// Builds a short display path like "..\parentDir\file.md", including as many
-    /// trailing directory segments as will fit within <paramref name="maxLength"/>.
-    /// Always shows at least one parent directory.
-    /// </summary>
-    private static string ShortenPath(string fullPath, int maxLength)
+    private async Task ShowRecentFilesDialogAsync(MainWindowViewModel vm)
     {
-        var fileName = Path.GetFileName(fullPath);
-        var dir = Path.GetDirectoryName(fullPath);
-        if (string.IsNullOrEmpty(dir))
-            return fileName;
-
-        // Split into directory segments
-        var segments = new List<string>();
-        var d = new DirectoryInfo(dir);
-        while (d != null)
+        var dialog = new Window
         {
-            segments.Add(d.Name);
-            d = d.Parent;
-        }
-        // segments[0] is the immediate parent, segments[1] is grandparent, etc.
-        if (segments.Count == 0)
-            return fileName;
+            Title = "Recent Files",
+            Width = 650,
+            Height = 450,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            CanResize = true,
+            MinWidth = 400,
+            MinHeight = 250,
+        };
 
-        // Always include at least one parent
-        var parts = new List<string> { segments[0], fileName };
-        var candidate = $"..{Path.DirectorySeparatorChar}{string.Join(Path.DirectorySeparatorChar, parts)}";
-
-        // Try adding more parent directories while under the limit
-        for (int i = 1; i < segments.Count; i++)
+        var listBox = new ListBox
         {
-            var trial = new List<string>();
-            for (int j = i; j >= 0; j--)
-                trial.Add(segments[j]);
-            trial.Add(fileName);
+            Margin = new Thickness(0),
+            SelectionMode = Avalonia.Controls.SelectionMode.Single,
+        };
 
-            var trialStr = $"..{Path.DirectorySeparatorChar}{string.Join(Path.DirectorySeparatorChar, trial)}";
-            if (trialStr.Length > maxLength)
-                break;
-            candidate = trialStr;
+        foreach (var path in vm.RecentFiles)
+        {
+            var displayPath = path;
+            var item = new ListBoxItem
+            {
+                Content = displayPath,
+                Tag = path,
+                Padding = new Thickness(8, 4),
+                FontSize = 13,
+            };
+            ToolTip.SetTip(item, path);
+            listBox.Items.Add(item);
         }
 
-        return candidate;
+        var openButton = new Button
+        {
+            Content = "Open",
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+            Padding = new Thickness(24, 6),
+            IsDefault = true,
+            IsEnabled = false,
+        };
+
+        var cancelButton = new Button
+        {
+            Content = "Cancel",
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+            Padding = new Thickness(24, 6),
+            IsCancel = true,
+        };
+
+        listBox.SelectionChanged += (_, _) =>
+        {
+            openButton.IsEnabled = listBox.SelectedItem != null;
+        };
+
+        // Double-click to open
+        listBox.DoubleTapped += (_, _) =>
+        {
+            if (listBox.SelectedItem is ListBoxItem selected && selected.Tag is string filePath)
+                dialog.Close(filePath);
+        };
+
+        openButton.Click += (_, _) =>
+        {
+            if (listBox.SelectedItem is ListBoxItem selected && selected.Tag is string filePath)
+                dialog.Close(filePath);
+        };
+
+        cancelButton.Click += (_, _) => dialog.Close(null);
+
+        var buttonPanel = new StackPanel
+        {
+            Orientation = Avalonia.Layout.Orientation.Horizontal,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+            Spacing = 8,
+            Margin = new Thickness(12),
+        };
+        buttonPanel.Children.Add(openButton);
+        buttonPanel.Children.Add(cancelButton);
+
+        var layout = new DockPanel { Margin = new Thickness(0) };
+        DockPanel.SetDock(buttonPanel, Avalonia.Controls.Dock.Bottom);
+        layout.Children.Add(buttonPanel);
+        layout.Children.Add(listBox);
+
+        dialog.Content = layout;
+
+        var result = await dialog.ShowDialog<string?>(this);
+        if (result != null)
+            await vm.OpenRecentFileCommand.ExecuteAsync(result);
     }
 
     protected override void OnDataContextChanged(EventArgs e)
@@ -274,6 +337,7 @@ public partial class MainWindow : Window
                 vm.UnsavedChangesDialog = ShowUnsavedChangesDialogAsync;
                 vm.ExitApplication = () => Close();
                 vm.FontPickerDialog = ShowFontPickerAsync;
+                vm.SettingsDialog = ShowSettingsDialogAsync;
                 vm.PropertyChanged += OnViewModelPropertyChanged;
 
                 // Load persisted settings before rendering
@@ -323,7 +387,8 @@ public partial class MainWindow : Window
 
                 _renderer.SetFont(vm.FontFamilyName, vm.FontSizePx);
                 _renderer.SetWordWrap(vm.WordWrap);
-                UpdateWordWrapMenuItem(vm.WordWrap);
+                ApplyWordWrapScrollBehavior(vm.WordWrap);
+                ApplyTheme(vm.ThemeMode);
                 UpdatePreview(vm.MarkdownText);
                 UpdateLayout(vm);
                 AppLogger.Info("MainWindow initialized successfully");
@@ -455,7 +520,14 @@ public partial class MainWindow : Window
             if (e.PropertyName is nameof(MainWindowViewModel.WordWrap))
             {
                 _renderer?.SetWordWrap(vm.WordWrap);
-                UpdateWordWrapMenuItem(vm.WordWrap);
+                ApplyWordWrapScrollBehavior(vm.WordWrap);
+                UpdatePreview(vm.MarkdownText);
+            }
+
+            // Theme change: apply theme variant and re-render
+            if (e.PropertyName is nameof(MainWindowViewModel.ThemeMode))
+            {
+                ApplyTheme(vm.ThemeMode);
                 UpdatePreview(vm.MarkdownText);
             }
         }
@@ -810,13 +882,226 @@ public partial class MainWindow : Window
         }
     }
 
-    private void UpdateWordWrapMenuItem(bool wordWrap)
+    private void ApplyWordWrapScrollBehavior(bool wordWrap)
     {
-        WordWrapMenuItem.Header = wordWrap ? "✓ _Word Wrap" : "  _Word Wrap";
         // When wrapping, disable horizontal scroll so text has a width constraint to wrap against
         PreviewScrollViewer.HorizontalScrollBarVisibility =
             wordWrap ? Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled
                      : Avalonia.Controls.Primitives.ScrollBarVisibility.Auto;
+    }
+
+    private void ApplyTheme(string themeMode)
+    {
+        if (Application.Current == null) return;
+
+        Application.Current.RequestedThemeVariant = themeMode switch
+        {
+            "Light" => Avalonia.Styling.ThemeVariant.Light,
+            "Dark" => Avalonia.Styling.ThemeVariant.Dark,
+            _ => Avalonia.Styling.ThemeVariant.Default, // "System" — follows OS
+        };
+    }
+
+    private async Task ShowSettingsDialogAsync()
+    {
+        if (DataContext is not MainWindowViewModel vm) return;
+
+        var dialog = new Window
+        {
+            Title = "Settings",
+            Width = 500,
+            Height = 520,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            CanResize = false,
+        };
+
+        // ── Theme selector ──────────────────────────────────────────
+        var themeLabel = new TextBlock
+        {
+            Text = "Theme",
+            FontWeight = Avalonia.Media.FontWeight.SemiBold,
+            FontSize = 14,
+            Margin = new Thickness(0, 0, 0, 6),
+        };
+
+        var themeOptions = new[] { "System", "Light", "Dark" };
+        var themeCombo = new ComboBox
+        {
+            ItemsSource = themeOptions,
+            SelectedItem = themeOptions.Contains(vm.ThemeMode) ? vm.ThemeMode : "System",
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
+            Margin = new Thickness(0, 0, 0, 16),
+        };
+
+        // ── Word Wrap ───────────────────────────────────────────────
+        var wordWrapCheck = new CheckBox
+        {
+            Content = "Word Wrap",
+            IsChecked = vm.WordWrap,
+            FontSize = 14,
+            Margin = new Thickness(0, 0, 0, 16),
+        };
+
+        // ── Font section ────────────────────────────────────────────
+        var fontLabel = new TextBlock
+        {
+            Text = "Font",
+            FontWeight = Avalonia.Media.FontWeight.SemiBold,
+            FontSize = 14,
+            Margin = new Thickness(0, 0, 0, 6),
+        };
+
+        var systemFonts = Avalonia.Media.FontManager.Current.SystemFonts
+            .Select(f => f.Name)
+            .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var fontList = new ListBox
+        {
+            ItemsSource = systemFonts,
+            SelectedItem = systemFonts.Contains(vm.FontFamilyName) ? vm.FontFamilyName : systemFonts.FirstOrDefault(),
+            Height = 180,
+            Margin = new Thickness(0, 0, 0, 8),
+        };
+
+        var sizeLabel = new TextBlock
+        {
+            Text = "Size (pt):",
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 8, 0),
+        };
+
+        var sizeUpDown = new NumericUpDown
+        {
+            Minimum = (decimal)Models.AppSettings.MinFontSizePt,
+            Maximum = (decimal)Models.AppSettings.MaxFontSizePt,
+            Increment = 0.5m,
+            Value = (decimal)vm.FontSizePt,
+            FormatString = "F1",
+            Width = 100,
+        };
+
+        var fontPreview = new TextBlock
+        {
+            Text = "The quick brown fox jumps over the lazy dog",
+            Margin = new Thickness(0, 8, 0, 0),
+            TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+        };
+
+        // Live preview updates
+        fontList.SelectionChanged += (_, _) =>
+        {
+            if (fontList.SelectedItem is string selectedFont)
+            {
+                fontPreview.FontFamily = new FontFamily($"{selectedFont}, {Models.AppSettings.FallbackFontFamily}");
+            }
+        };
+
+        sizeUpDown.ValueChanged += (_, _) =>
+        {
+            if (sizeUpDown.Value.HasValue)
+                fontPreview.FontSize = (double)sizeUpDown.Value.Value * 96.0 / 72.0;
+        };
+
+        // Set initial preview
+        if (fontList.SelectedItem is string initialFont)
+            fontPreview.FontFamily = new FontFamily($"{initialFont}, {Models.AppSettings.FallbackFontFamily}");
+        fontPreview.FontSize = vm.FontSizePx;
+
+        // Scroll to currently selected font
+        if (fontList.SelectedItem != null)
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                var idx = systemFonts.IndexOf((string)fontList.SelectedItem);
+                if (idx >= 0)
+                    fontList.ScrollIntoView(idx);
+            }, DispatcherPriority.Loaded);
+        }
+
+        var sizePanel = new StackPanel
+        {
+            Orientation = Avalonia.Layout.Orientation.Horizontal,
+            Children = { sizeLabel, sizeUpDown },
+        };
+
+        // ── Buttons ─────────────────────────────────────────────────
+        var okButton = new Button
+        {
+            Content = "OK",
+            Width = 80,
+            IsDefault = true,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+        };
+
+        var cancelButton = new Button
+        {
+            Content = "Cancel",
+            Width = 80,
+            IsCancel = true,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+        };
+
+        var buttonPanel = new StackPanel
+        {
+            Orientation = Avalonia.Layout.Orientation.Horizontal,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+            Spacing = 8,
+            Margin = new Thickness(0, 16, 0, 0),
+        };
+        buttonPanel.Children.Add(okButton);
+        buttonPanel.Children.Add(cancelButton);
+
+        bool accepted = false;
+        okButton.Click += (_, _) => { accepted = true; dialog.Close(); };
+        cancelButton.Click += (_, _) => dialog.Close();
+
+        // ── Layout ──────────────────────────────────────────────────
+        var content = new StackPanel
+        {
+            Margin = new Thickness(20),
+            Spacing = 0,
+            Children =
+            {
+                themeLabel,
+                themeCombo,
+                wordWrapCheck,
+                fontLabel,
+                fontList,
+                sizePanel,
+                fontPreview,
+                buttonPanel,
+            },
+        };
+
+        dialog.Content = content;
+        await dialog.ShowDialog(this);
+
+        if (!accepted) return;
+
+        // Apply changes
+        var themeChanged = (themeCombo.SelectedItem as string ?? "System") != vm.ThemeMode;
+        var fontChanged = (fontList.SelectedItem as string) != vm.FontFamilyName;
+        var sizeChanged = sizeUpDown.Value.HasValue && (double)sizeUpDown.Value.Value != vm.FontSizePt;
+        var wrapChanged = wordWrapCheck.IsChecked != vm.WordWrap;
+
+        vm.ThemeMode = themeCombo.SelectedItem as string ?? "System";
+        vm.WordWrap = wordWrapCheck.IsChecked ?? true;
+
+        if (fontList.SelectedItem is string chosenFont)
+            vm.FontFamilyName = chosenFont;
+        if (sizeUpDown.Value.HasValue)
+            vm.FontSizePt = (double)sizeUpDown.Value.Value;
+
+        vm.SaveSettings();
+
+        var changes = new List<string>();
+        if (themeChanged) changes.Add($"Theme: {vm.ThemeMode}");
+        if (fontChanged || sizeChanged) changes.Add($"Font: {vm.FontFamilyName}, {vm.FontSizePt}pt");
+        if (wrapChanged) changes.Add($"Word Wrap: {(vm.WordWrap ? "On" : "Off")}");
+
+        if (changes.Count > 0)
+            vm.StatusText = $"Settings updated — {string.Join("; ", changes)}";
     }
 
     private static readonly FilePickerFileType MarkdownFileType = new("Markdown Files")
