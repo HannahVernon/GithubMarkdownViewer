@@ -14,7 +14,8 @@ public class AppSettings
     public const double DefaultFontSizePt = 10.0;
     public const double MinFontSizePt = 6.0;
     public const double MaxFontSizePt = 48.0;
-    public const int MaxRecentFiles = 10;
+    public const int MaxRecentFiles = 100;
+    public const int MenuRecentFilesCount = 10;
 
     [JsonPropertyName("fontFamily")]
     public string FontFamilyName { get; set; } = DefaultFontFamily;
@@ -36,6 +37,9 @@ public class AppSettings
 
     [JsonPropertyName("wordWrap")]
     public bool WordWrap { get; set; } = true;
+
+    [JsonPropertyName("themeMode")]
+    public string ThemeMode { get; set; } = "System";
 
     [JsonPropertyName("declinedFileAssociation")]
     public bool DeclinedFileAssociation { get; set; } = false;
@@ -98,6 +102,12 @@ public class AppSettings
             { "Normal", "Minimized", "Maximized", "FullScreen" };
         if (WindowState != null && !validStates.Contains(WindowState))
             WindowState = "Normal";
+
+        // Validate ThemeMode
+        var validThemes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            { "System", "Light", "Dark" };
+        if (!validThemes.Contains(ThemeMode))
+            ThemeMode = "System";
 
         // Sanitize font family — only allow ASCII-safe characters
         if (!string.IsNullOrEmpty(FontFamilyName) &&

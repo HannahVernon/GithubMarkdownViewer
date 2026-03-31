@@ -43,6 +43,9 @@ public partial class MainWindowViewModel : ViewModelBase
     private bool _wordWrap = true;
 
     [ObservableProperty]
+    private string _themeMode = "System";
+
+    [ObservableProperty]
     private string _statusText = "Ready";
 
     // ── Font settings ─────────────────────────────────────────────────
@@ -101,11 +104,19 @@ public partial class MainWindowViewModel : ViewModelBase
     public Func<string, Task<bool>>? ConfirmDialog { get; set; }
     public Action? ExitApplication { get; set; }
     public Func<string, double, Task<(string fontFamily, double sizePt)?>>? FontPickerDialog { get; set; }
+    public Func<Task>? SettingsDialog { get; set; }
 
     /// <summary>
     /// File path passed via command-line argument (e.g. double-click from shell).
     /// </summary>
     public string? StartupFilePath { get; set; }
+
+    [RelayCommand]
+    private async Task OpenSettings()
+    {
+        if (SettingsDialog != null)
+            await SettingsDialog();
+    }
 
     [RelayCommand]
     private async Task ChangeFont()
@@ -129,6 +140,7 @@ public partial class MainWindowViewModel : ViewModelBase
         ShowEditor = settings.ShowEditor;
         ShowPreview = settings.ShowPreview;
         WordWrap = settings.WordWrap;
+        ThemeMode = settings.ThemeMode;
         DeclinedFileAssociation = settings.DeclinedFileAssociation;
 
         // Restore recent files list (only files that still exist)
@@ -166,7 +178,7 @@ public partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    private void SaveSettings()
+    internal void SaveSettings()
     {
         SettingsService.Save(new AppSettings
         {
@@ -177,6 +189,7 @@ public partial class MainWindowViewModel : ViewModelBase
             ShowEditor = ShowEditor,
             ShowPreview = ShowPreview,
             WordWrap = WordWrap,
+            ThemeMode = ThemeMode,
             DeclinedFileAssociation = DeclinedFileAssociation,
             WindowX = WindowX,
             WindowY = WindowY,
