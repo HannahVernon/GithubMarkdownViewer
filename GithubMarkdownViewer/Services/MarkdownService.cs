@@ -11,29 +11,26 @@ public class MarkdownService
 {
     private readonly MarkdownPipeline _pipeline;
 
+    /// <summary>
+    /// Pipeline with DisableHtml for safe rendering (preview and HTML export).
+    /// Cached as static to avoid rebuilding on every call.
+    /// </summary>
+    private static readonly MarkdownPipeline SafePipeline = BuildPipeline(disableHtml: true);
+
     public MarkdownService()
     {
-        _pipeline = new MarkdownPipelineBuilder()
-            .UseEmojiAndSmiley()
-            .UseAutoLinks()
-            .UseTaskLists()
-            .UsePipeTables()
-            .UseGridTables()
-            .UseFootnotes()
-            .UseAutoIdentifiers()
-            .UseDefinitionLists()
-            .UseAbbreviations()
-            .UseFigures()
-            .UseMathematics()
-            .UseDiagrams()
-            .UseEmphasisExtras()
-            .UseCitations()
-            .UseCustomContainers()
-            .UseListExtras()
-            .Build();
+        _pipeline = BuildPipeline(disableHtml: false);
     }
 
+    /// <summary>
+    /// Pipeline for the Avalonia renderer (HTML nodes are manually handled as plain text).
+    /// </summary>
     public MarkdownPipeline Pipeline => _pipeline;
+
+    /// <summary>
+    /// Pipeline with DisableHtml enabled — use for HTML export and preview rendering.
+    /// </summary>
+    public MarkdownPipeline SafeExportPipeline => SafePipeline;
 
     /// <summary>
     /// Converts markdown text to an HTML fragment.
@@ -41,28 +38,7 @@ public class MarkdownService
     /// </summary>
     public string ToHtml(string markdown)
     {
-        // Use a separate pipeline with DisableHtml for safe HTML output
-        var safePipeline = new MarkdownPipelineBuilder()
-            .UseEmojiAndSmiley()
-            .UseAutoLinks()
-            .UseTaskLists()
-            .UsePipeTables()
-            .UseGridTables()
-            .UseFootnotes()
-            .UseAutoIdentifiers()
-            .UseDefinitionLists()
-            .UseAbbreviations()
-            .UseFigures()
-            .UseMathematics()
-            .UseDiagrams()
-            .UseEmphasisExtras()
-            .UseCitations()
-            .UseCustomContainers()
-            .UseListExtras()
-            .DisableHtml()
-            .Build();
-
-        return Markdig.Markdown.ToHtml(markdown, safePipeline);
+        return Markdig.Markdown.ToHtml(markdown, SafePipeline);
     }
 
     /// <summary>
@@ -117,5 +93,31 @@ public class MarkdownService
             </body>
             </html>
             """;
+    }
+
+    private static MarkdownPipeline BuildPipeline(bool disableHtml)
+    {
+        var builder = new MarkdownPipelineBuilder()
+            .UseEmojiAndSmiley()
+            .UseAutoLinks()
+            .UseTaskLists()
+            .UsePipeTables()
+            .UseGridTables()
+            .UseFootnotes()
+            .UseAutoIdentifiers()
+            .UseDefinitionLists()
+            .UseAbbreviations()
+            .UseFigures()
+            .UseMathematics()
+            .UseDiagrams()
+            .UseEmphasisExtras()
+            .UseCitations()
+            .UseCustomContainers()
+            .UseListExtras();
+
+        if (disableHtml)
+            builder.DisableHtml();
+
+        return builder.Build();
     }
 }

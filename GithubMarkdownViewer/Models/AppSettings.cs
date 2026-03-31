@@ -14,7 +14,8 @@ public class AppSettings
     public const double DefaultFontSizePt = 10.0;
     public const double MinFontSizePt = 6.0;
     public const double MaxFontSizePt = 48.0;
-    public const int MaxRecentFiles = 10;
+    public const int MaxRecentFiles = 100;
+    public const int MenuRecentFilesCount = 10;
 
     [JsonPropertyName("fontFamily")]
     public string FontFamilyName { get; set; } = DefaultFontFamily;
@@ -36,6 +37,9 @@ public class AppSettings
 
     [JsonPropertyName("wordWrap")]
     public bool WordWrap { get; set; } = true;
+
+    [JsonPropertyName("themeMode")]
+    public string ThemeMode { get; set; } = "System";
 
     [JsonPropertyName("declinedFileAssociation")]
     public bool DeclinedFileAssociation { get; set; } = false;
@@ -83,9 +87,31 @@ public class AppSettings
         if (RecentFiles.Count > MaxRecentFiles)
             RecentFiles = RecentFiles.GetRange(0, MaxRecentFiles);
 
-        // Sanitize font family — strip any characters that aren't alphanumeric, spaces, commas, or hyphens
+        // Truncate file paths to prevent oversized settings
+        const int MaxPathLength = 32767;
+        if (LastOpenFilePath != null && LastOpenFilePath.Length > MaxPathLength)
+            LastOpenFilePath = null;
+        for (int i = RecentFiles.Count - 1; i >= 0; i--)
+        {
+            if (RecentFiles[i] != null && RecentFiles[i].Length > MaxPathLength)
+                RecentFiles.RemoveAt(i);
+        }
+
+        // Validate WindowState against known values
+        var validStates = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            { "Normal", "Minimized", "Maximized", "FullScreen" };
+        if (WindowState != null && !validStates.Contains(WindowState))
+            WindowState = "Normal";
+
+        // Validate ThemeMode
+        var validThemes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            { "System", "Light", "Dark" };
+        if (!validThemes.Contains(ThemeMode))
+            ThemeMode = "System";
+
+        // Sanitize font family — only allow ASCII-safe characters
         if (!string.IsNullOrEmpty(FontFamilyName) &&
-            !System.Text.RegularExpressions.Regex.IsMatch(FontFamilyName, @"^[\w\s,\-\.]+$"))
+            !System.Text.RegularExpressions.Regex.IsMatch(FontFamilyName, @"^[a-zA-Z0-9_ ,\-\.]+$"))
         {
             FontFamilyName = DefaultFontFamily;
         }

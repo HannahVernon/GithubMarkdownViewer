@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Data.Core;
 using Avalonia.Data.Core.Plugins;
+using Avalonia.Styling;
 using System;
 using System.Linq;
 using System.Threading.Tasks;
@@ -37,6 +38,15 @@ public partial class App : Application
         {
             DisableAvaloniaDataAnnotationValidation();
             var vm = new MainWindowViewModel();
+
+            // Apply persisted theme before creating the main window
+            var settings = SettingsService.Load();
+            RequestedThemeVariant = settings.ThemeMode switch
+            {
+                "Light" => ThemeVariant.Light,
+                "Dark" => ThemeVariant.Dark,
+                _ => ThemeVariant.Default,
+            };
 
             // If a file was passed as a command-line argument, set it for opening
             if (desktop.Args is { Length: > 0 } && !string.IsNullOrEmpty(desktop.Args[0]))
