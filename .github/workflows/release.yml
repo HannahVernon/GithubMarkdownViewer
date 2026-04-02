@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   release:
@@ -17,7 +18,6 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup .NET 9
         uses: actions/setup-dotnet@v4
@@ -39,20 +39,14 @@ jobs:
           echo "new_version=$new_version" >> "$GITHUB_OUTPUT"
           echo "Bumped version: $new_version"
 
-      - name: Update version in csproj
-        run: |
-          sed -i "s|<Version>${{ steps.current.outputs.version }}</Version>|<Version>${{ steps.bump.outputs.new_version }}</Version>|" GithubMarkdownViewer/GithubMarkdownViewer.csproj
-
-      - name: Verify build with new version
-        run: dotnet build --configuration Release
-
-      - name: Commit version bump
+      - name: Create tag and GitHub Release
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add GithubMarkdownViewer/GithubMarkdownViewer.csproj
-          git commit -m "Bump version to v${{ steps.bump.outputs.new_version }}"
-          git push origin main
+          git tag "v${{ steps.bump.outputs.new_version }}" HEAD
+          git push origin "v${{ steps.bump.outputs.new_version }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -60,5 +54,23 @@ jobs:
           tag_name: v${{ steps.bump.outputs.new_version }}
           name: v${{ steps.bump.outputs.new_version }}
           generate_release_notes: true
-          target_commitish: main
+
+      - name: Create version bump PR
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          branch="auto/bump-version-${{ steps.bump.outputs.new_version }}"
+          git checkout -b "$branch"
+          sed -i "s|<Version>${{ steps.current.outputs.version }}</Version>|<Version>${{ steps.bump.outputs.new_version }}</Version>|" GithubMarkdownViewer/GithubMarkdownViewer.csproj
+          dotnet build --configuration Release --nologo -v q
+          git add GithubMarkdownViewer/GithubMarkdownViewer.csproj
+          git commit -m "Bump version to v${{ steps.bump.outputs.new_version }}"
+          git push origin "$branch"
+          gh pr create \
+            --base main \
+            --head "$branch" \
+            --title "Bump version to v${{ steps.bump.outputs.new_version }}" \
+            --body "Automated version bump following release v${{ steps.bump.outputs.new_version }}."
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
