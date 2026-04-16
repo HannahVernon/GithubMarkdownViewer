@@ -23,6 +23,8 @@
         <KeyBinding Gesture="Ctrl+Shift+E" Command="{Binding ExportHtmlCommand}" />
     </Window.KeyBindings>
 
+    <!-- Ctrl+F and F3/Shift+F3 are handled in code-behind via KeyDown -->
+
     <DockPanel>
         <!-- Menu Bar -->
         <Menu DockPanel.Dock="Top">
@@ -30,6 +32,7 @@
                 <MenuItem Header="_New" Command="{Binding NewFileCommand}" InputGesture="Ctrl+N" />
                 <MenuItem Header="_Open..." Command="{Binding OpenFileCommand}" InputGesture="Ctrl+O" />
                 <MenuItem Header="Recent _Files" Name="RecentFilesMenu" />
+                <MenuItem Header="_Reload" Command="{Binding ReloadFileCommand}" InputGesture="F5" />
                 <Separator />
                 <MenuItem Header="_Save" Command="{Binding SaveFileCommand}" InputGesture="Ctrl+S" />
                 <MenuItem Header="Save _As..." Command="{Binding SaveFileAsCommand}" InputGesture="Ctrl+Shift+S" />
@@ -37,6 +40,9 @@
                 <MenuItem Header="_Export HTML..." Command="{Binding ExportHtmlCommand}" InputGesture="Ctrl+Shift+E" />
                 <Separator />
                 <MenuItem Header="E_xit" Command="{Binding ExitAppCommand}" InputGesture="Alt+F4" />
+            </MenuItem>
+            <MenuItem Header="_Edit">
+                <MenuItem Header="_Find..." Name="FindMenuItem" InputGesture="Ctrl+F" />
             </MenuItem>
             <MenuItem Header="_View">
                 <MenuItem Header="_Split View" Command="{Binding ViewSplitCommand}" />
@@ -103,6 +109,24 @@
                     <Border DockPanel.Dock="Top" Background="#f6f8fa" Padding="10,6" BorderBrush="#d1d9e0" BorderThickness="0,0,0,1">
                         <TextBlock Text="PREVIEW" FontSize="11" FontWeight="SemiBold" Foreground="#656d76" />
                     </Border>
+
+                    <!-- Find Bar (initially hidden) -->
+                    <Border DockPanel.Dock="Top" Name="FindBar" IsVisible="False"
+                            Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}"
+                            Padding="6" BorderBrush="#d1d9e0" BorderThickness="0,0,0,1">
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBox Name="FindTextBox" Width="250" Watermark="Find..." FontSize="13" />
+                            <Button Name="FindPrevButton" Content="▲" FontSize="11" Padding="8,4"
+                                    ToolTip.Tip="Previous match (Shift+F3)" />
+                            <Button Name="FindNextButton" Content="▼" FontSize="11" Padding="8,4"
+                                    ToolTip.Tip="Next match (F3)" />
+                            <TextBlock Name="FindStatusText" VerticalAlignment="Center"
+                                       FontSize="12" Margin="8,0,0,0" Opacity="0.7" />
+                            <Button Name="FindCloseButton" Content="✕" FontSize="11" Padding="8,4"
+                                    ToolTip.Tip="Close find bar (Escape)" />
+                        </StackPanel>
+                    </Border>
+
                     <ScrollViewer Name="PreviewScrollViewer"
                                 HorizontalScrollBarVisibility="Auto"
                                 VerticalScrollBarVisibility="Auto">

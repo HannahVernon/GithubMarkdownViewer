@@ -9,6 +9,7 @@ using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Documents;
 using Avalonia.Controls.Primitives;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
@@ -33,6 +34,16 @@ public partial class MainWindow : Window
     private readonly Stack<string> _forwardStack = new();
     private Button? _backButton;
     private Button? _forwardButton;
+
+    // Find-in-preview state
+    private readonly List<TextBlock> _findMatches = new();
+    private int _currentFindIndex = -1;
+    private Border? _currentHighlightBorder;
+
+    // File watcher state
+    private FileSystemWatcher? _fileWatcher;
+    private bool _isSelfSaving;
+    private bool _reloadPromptPending;
 
     public MainWindow()
     {
@@ -66,6 +77,8 @@ public partial class MainWindow : Window
     private void CleanupEventHandlers(MainWindowViewModel vm)
     {
         vm.PropertyChanged -= OnViewModelPropertyChanged;
+
+        StopFileWatcher();
 
         if (_renderer != null)
             _renderer.LinkClicked -= OnRendererLinkClicked;
@@ -338,6 +351,7 @@ public partial class MainWindow : Window
                 vm.ExitApplication = () => Close();
                 vm.FontPickerDialog = ShowFontPickerAsync;
                 vm.SettingsDialog = ShowSettingsDialogAsync;
+                vm.SuppressFileWatcher = suppress => _isSelfSaving = suppress;
                 vm.PropertyChanged += OnViewModelPropertyChanged;
 
                 // Load persisted settings before rendering
@@ -368,6 +382,14 @@ public partial class MainWindow : Window
 
                 // Wire up About menu
                 AboutMenuItem.Click += async (_, _) => await ShowAboutDialogAsync();
+
+                // Wire up Edit > Find menu and find bar controls
+                FindMenuItem.Click += (_, _) => ShowFindBar();
+                FindCloseButton.Click += (_, _) => HideFindBar();
+                FindNextButton.Click += (_, _) => NavigateFindMatch(+1);
+                FindPrevButton.Click += (_, _) => NavigateFindMatch(-1);
+                FindTextBox.TextChanged += (_, _) => PerformFind(FindTextBox.Text);
+                FindTextBox.KeyDown += OnFindTextBoxKeyDown;
 
                 // Wire up navigation buttons
                 _backButton = this.FindControl<Button>("NavBackButton");
@@ -530,6 +552,12 @@ public partial class MainWindow : Window
                 ApplyTheme(vm.ThemeMode);
                 UpdatePreview(vm.MarkdownText);
             }
+
+            // File path changed: restart file watcher
+            if (e.PropertyName is nameof(MainWindowViewModel.CurrentFilePath))
+            {
+                StartFileWatcher(vm.CurrentFilePath);
+            }
         }
         catch (Exception ex)
         {
@@ -541,11 +569,22 @@ public partial class MainWindow : Window
     {
         try
         {
+            // Clear stale find state before re-rendering
+            _currentHighlightBorder = null;
+            _findMatches.Clear();
+            _currentFindIndex = -1;
+            if (FindBar.IsVisible)
+                FindStatusText.Text = "";
+
             PreviewPanel.Children.Clear();
             if (_renderer == null || string.IsNullOrEmpty(markdown)) return;
 
             foreach (var control in _renderer.Render(markdown))
                 PreviewPanel.Children.Add(control);
+
+            // Re-run search if the find bar is open
+            if (FindBar.IsVisible && !string.IsNullOrEmpty(FindTextBox.Text))
+                PerformFind(FindTextBox.Text);
         }
         catch (Exception ex)
         {
@@ -827,6 +866,31 @@ public partial class MainWindow : Window
 
     private void OnNavigationKeyDown(object? sender, Avalonia.Input.KeyEventArgs e)
     {
+        // Ctrl+F: open find bar
+        if (e.Key == Avalonia.Input.Key.F && e.KeyModifiers == Avalonia.Input.KeyModifiers.Control)
+        {
+            e.Handled = true;
+            ShowFindBar();
+            return;
+        }
+
+        // Escape: close find bar
+        if (e.Key == Avalonia.Input.Key.Escape && FindBar.IsVisible)
+        {
+            e.Handled = true;
+            HideFindBar();
+            return;
+        }
+
+        // F3 / Shift+F3: next/previous match
+        if (e.Key == Avalonia.Input.Key.F3 && FindBar.IsVisible)
+        {
+            e.Handled = true;
+            NavigateFindMatch(e.KeyModifiers.HasFlag(Avalonia.Input.KeyModifiers.Shift) ? -1 : +1);
+            return;
+        }
+
+        // Alt+Left / Alt+Right for navigation
         if (e.KeyModifiers != Avalonia.Input.KeyModifiers.Alt) return;
 
         if (e.Key == Avalonia.Input.Key.Left && _backStack.Count > 0)
@@ -853,6 +917,304 @@ public partial class MainWindow : Window
         {
             e.Handled = true;
             _ = NavigateForwardAsync();
+        }
+    }
+
+    // ── Find in preview ─────────────────────────────────────────────
+
+    private void ShowFindBar()
+    {
+        FindBar.IsVisible = true;
+        FindTextBox.Focus();
+        FindTextBox.SelectAll();
+    }
+
+    private void HideFindBar()
+    {
+        FindBar.IsVisible = false;
+        ClearFindHighlight();
+        _findMatches.Clear();
+        _currentFindIndex = -1;
+        FindStatusText.Text = "";
+    }
+
+    private void OnFindTextBoxKeyDown(object? sender, Avalonia.Input.KeyEventArgs e)
+    {
+        if (e.Key == Avalonia.Input.Key.Enter)
+        {
+            e.Handled = true;
+            NavigateFindMatch(e.KeyModifiers.HasFlag(Avalonia.Input.KeyModifiers.Shift) ? -1 : +1);
+        }
+        else if (e.Key == Avalonia.Input.Key.Escape)
+        {
+            e.Handled = true;
+            HideFindBar();
+        }
+    }
+
+    private void PerformFind(string? searchText)
+    {
+        ClearFindHighlight();
+        _findMatches.Clear();
+        _currentFindIndex = -1;
+
+        if (string.IsNullOrEmpty(searchText))
+        {
+            FindStatusText.Text = "";
+            return;
+        }
+
+        CollectMatchingTextBlocks(PreviewPanel, searchText);
+
+        if (_findMatches.Count > 0)
+        {
+            _currentFindIndex = 0;
+            HighlightCurrentMatch();
+            FindStatusText.Text = $"1 of {_findMatches.Count}";
+        }
+        else
+        {
+            FindStatusText.Text = "No matches";
+        }
+    }
+
+    private void NavigateFindMatch(int direction)
+    {
+        if (_findMatches.Count == 0) return;
+
+        ClearFindHighlight();
+        _currentFindIndex = (_currentFindIndex + direction + _findMatches.Count) % _findMatches.Count;
+        HighlightCurrentMatch();
+        FindStatusText.Text = $"{_currentFindIndex + 1} of {_findMatches.Count}";
+    }
+
+    private void HighlightCurrentMatch()
+    {
+        if (_currentFindIndex < 0 || _currentFindIndex >= _findMatches.Count) return;
+
+        var matchBlock = _findMatches[_currentFindIndex];
+
+        // Find the top-level PreviewPanel child that contains this TextBlock
+        // so we can scroll it into view and highlight it
+        var topLevelChild = FindPreviewPanelAncestor(matchBlock) ?? (Control)matchBlock;
+
+        // Scroll the match into view
+        topLevelChild.BringIntoView();
+
+        // Apply a highlight by inserting a colored Border wrapper
+        // around the top-level child
+        var parent = topLevelChild.Parent;
+        if (parent is Panel panel)
+        {
+            var index = panel.Children.IndexOf(topLevelChild);
+            if (index >= 0)
+            {
+                panel.Children.RemoveAt(index);
+                _currentHighlightBorder = new Border
+                {
+                    Background = new SolidColorBrush(Color.Parse("#FFFDE7")),
+                    BorderBrush = new SolidColorBrush(Color.Parse("#FBC02D")),
+                    BorderThickness = new Thickness(2),
+                    CornerRadius = new CornerRadius(4),
+                    Padding = new Thickness(2),
+                    Child = topLevelChild,
+                    Tag = panel,
+                };
+                panel.Children.Insert(index, _currentHighlightBorder);
+                _currentHighlightBorder.BringIntoView();
+            }
+        }
+    }
+
+    private void ClearFindHighlight()
+    {
+        if (_currentHighlightBorder == null) return;
+
+        var child = _currentHighlightBorder.Child;
+        if (child == null) return;
+
+        var parent = _currentHighlightBorder.Parent;
+        if (parent is Panel panel)
+        {
+            var index = panel.Children.IndexOf(_currentHighlightBorder);
+            if (index >= 0)
+            {
+                _currentHighlightBorder.Child = null;
+                panel.Children.RemoveAt(index);
+                panel.Children.Insert(index, child);
+            }
+        }
+        _currentHighlightBorder = null;
+    }
+
+    /// <summary>
+    /// Finds the direct child of PreviewPanel that is an ancestor of the given control.
+    /// </summary>
+    private Control? FindPreviewPanelAncestor(Control control)
+    {
+        Control? current = control;
+        while (current != null)
+        {
+            if (current.Parent == PreviewPanel)
+                return current;
+            current = current.Parent as Control;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Recursively walks the visual tree to find TextBlock/SelectableTextBlock
+    /// controls whose text content contains the search string.
+    /// </summary>
+    private void CollectMatchingTextBlocks(Control parent, string searchText)
+    {
+        if (parent is TextBlock tb)
+        {
+            var text = ExtractTextBlockContent(tb);
+            if (!string.IsNullOrEmpty(text)
+                && text.Contains(searchText, StringComparison.OrdinalIgnoreCase))
+            {
+                _findMatches.Add(tb);
+            }
+        }
+
+        if (parent is Panel panel)
+        {
+            foreach (var child in panel.Children)
+            {
+                if (child is Control c)
+                    CollectMatchingTextBlocks(c, searchText);
+            }
+        }
+        else if (parent is Decorator decorator && decorator.Child is Control dc)
+        {
+            CollectMatchingTextBlocks(dc, searchText);
+        }
+        else if (parent is ContentControl cc && cc.Content is Control ccc)
+        {
+            CollectMatchingTextBlocks(ccc, searchText);
+        }
+    }
+
+    /// <summary>
+    /// Extracts the full text content from a TextBlock, handling both
+    /// the Text property and Inlines collection.
+    /// </summary>
+    private static string ExtractTextBlockContent(TextBlock tb)
+    {
+        // If Text property is set directly, use it
+        if (!string.IsNullOrEmpty(tb.Text))
+            return tb.Text;
+
+        // Otherwise, extract text from the Inlines collection
+        if (tb.Inlines is { Count: > 0 })
+            return string.Concat(tb.Inlines.Select(ExtractInlineText));
+
+        return string.Empty;
+    }
+
+    private static string ExtractInlineText(Inline inline)
+    {
+        return inline switch
+        {
+            Run run => run.Text ?? string.Empty,
+            InlineUIContainer uic when uic.Child is TextBlock innerTb
+                => ExtractTextBlockContent(innerTb),
+            Span span when span.Inlines is { Count: > 0 }
+                => string.Concat(span.Inlines.Select(ExtractInlineText)),
+            _ => string.Empty,
+        };
+    }
+
+    // ── File watcher ────────────────────────────────────────────────
+
+    private void StartFileWatcher(string? filePath)
+    {
+        StopFileWatcher();
+
+        if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath))
+            return;
+
+        try
+        {
+            var directory = Path.GetDirectoryName(filePath);
+            var fileName = Path.GetFileName(filePath);
+            if (directory == null || fileName == null) return;
+
+            _fileWatcher = new FileSystemWatcher(directory, fileName)
+            {
+                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size,
+                EnableRaisingEvents = true,
+            };
+
+            _fileWatcher.Changed += OnWatchedFileChanged;
+            AppLogger.Info($"File watcher started for: {fileName}");
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Error("Failed to start file watcher", ex);
+        }
+    }
+
+    private void StopFileWatcher()
+    {
+        if (_fileWatcher == null) return;
+
+        _fileWatcher.Changed -= OnWatchedFileChanged;
+        _fileWatcher.EnableRaisingEvents = false;
+        _fileWatcher.Dispose();
+        _fileWatcher = null;
+        _reloadPromptPending = false;
+    }
+
+    private void OnWatchedFileChanged(object sender, FileSystemEventArgs e)
+    {
+        // Ignore changes triggered by our own save operations
+        if (_isSelfSaving) return;
+
+        // FileSystemWatcher fires on a thread-pool thread and may fire
+        // multiple times for a single save. Use a flag to debounce and
+        // marshal to the UI thread.
+        if (_reloadPromptPending) return;
+        _reloadPromptPending = true;
+
+        Dispatcher.UIThread.Post(() => _ = PromptReloadFileAsync(), DispatcherPriority.Background);
+    }
+
+    private async Task PromptReloadFileAsync()
+    {
+        try
+        {
+            if (DataContext is not MainWindowViewModel vm) return;
+            if (string.IsNullOrEmpty(vm.CurrentFilePath)) return;
+
+            var fileName = Path.GetFileName(vm.CurrentFilePath);
+            var reload = await ConfirmAsync(
+                $"The file \"{fileName}\" has been modified by another program.\n\nDo you want to reload it?");
+
+            if (reload)
+            {
+                if (!File.Exists(vm.CurrentFilePath))
+                {
+                    await ShowMessageAsync("File Not Found",
+                        $"The file no longer exists:\n{fileName}");
+                    return;
+                }
+
+                var content = await File.ReadAllTextAsync(vm.CurrentFilePath);
+                vm.MarkdownText = content;
+                vm.IsModified = false;
+                vm.StatusText = $"Reloaded: {fileName}";
+                UpdatePreview(content);
+            }
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Error("Failed to reload file", ex);
+        }
+        finally
+        {
+            _reloadPromptPending = false;
         }
     }
 

@@ -27,6 +27,7 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(WindowTitle))]
     [NotifyPropertyChangedFor(nameof(HasFile))]
+    [NotifyCanExecuteChangedFor(nameof(ReloadFileCommand))]
     private string? _currentFilePath;
 
     [ObservableProperty]
@@ -105,6 +106,12 @@ public partial class MainWindowViewModel : ViewModelBase
     public Action? ExitApplication { get; set; }
     public Func<string, double, Task<(string fontFamily, double sizePt)?>>? FontPickerDialog { get; set; }
     public Func<Task>? SettingsDialog { get; set; }
+
+    /// <summary>
+    /// Callback to suppress/resume file watcher during our own saves.
+    /// Pass true to suppress, false to resume.
+    /// </summary>
+    public Action<bool>? SuppressFileWatcher { get; set; }
 
     /// <summary>
     /// File path passed via command-line argument (e.g. double-click from shell).
@@ -347,6 +354,25 @@ public partial class MainWindowViewModel : ViewModelBase
         StatusText = $"Opened: {Path.GetFileName(path)}";
     }
 
+    [RelayCommand(CanExecute = nameof(HasFile))]
+    private async Task ReloadFile()
+    {
+        if (CurrentFilePath == null) return;
+
+        if (IsModified)
+        {
+            if (!await HandleUnsavedChangesAsync()) return;
+        }
+
+        var content = await SafeReadFileAsync(CurrentFilePath);
+        if (content != null)
+        {
+            MarkdownText = content;
+            IsModified = false;
+            StatusText = $"Reloaded: {Path.GetFileName(CurrentFilePath)}";
+        }
+    }
+
     [RelayCommand]
     private async Task SaveFile()
     {
@@ -358,13 +384,16 @@ public partial class MainWindowViewModel : ViewModelBase
 
         try
         {
+            SuppressFileWatcher?.Invoke(true);
             await File.WriteAllTextAsync(CurrentFilePath, MarkdownText);
+            SuppressFileWatcher?.Invoke(false);
             IsModified = false;
             AddToRecentFiles(CurrentFilePath);
             StatusText = $"Saved: {Path.GetFileName(CurrentFilePath)}";
         }
         catch (Exception ex)
         {
+            SuppressFileWatcher?.Invoke(false);
             AppLogger.Error("Failed to save file", ex);
             if (ShowMessageDialog != null)
                 await ShowMessageDialog("Error", "An error occurred while saving the file.");
@@ -381,7 +410,9 @@ public partial class MainWindowViewModel : ViewModelBase
 
         try
         {
+            SuppressFileWatcher?.Invoke(true);
             await File.WriteAllTextAsync(path, MarkdownText);
+            SuppressFileWatcher?.Invoke(false);
             CurrentFilePath = path;
             IsModified = false;
             AddToRecentFiles(path);
@@ -389,6 +420,7 @@ public partial class MainWindowViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
+            SuppressFileWatcher?.Invoke(false);
             AppLogger.Error("Failed to save file as", ex);
             if (ShowMessageDialog != null)
                 await ShowMessageDialog("Error", "An error occurred while saving the file.");
