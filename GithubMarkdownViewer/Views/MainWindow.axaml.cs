@@ -9,7 +9,6 @@ using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Controls.Documents;
 using Avalonia.Controls.Primitives;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
@@ -35,10 +34,10 @@ public partial class MainWindow : Window
     private Button? _backButton;
     private Button? _forwardButton;
 
-    // Find-in-preview state
-    private readonly List<TextBlock> _findMatches = new();
+    // Find-in-editor state
+    private int _findMatchCount;
     private int _currentFindIndex = -1;
-    private Border? _currentHighlightBorder;
+    private readonly List<int> _findMatchPositions = new();
 
     // File watcher state
     private FileSystemWatcher? _fileWatcher;
@@ -383,13 +382,16 @@ public partial class MainWindow : Window
                 // Wire up About menu
                 AboutMenuItem.Click += async (_, _) => await ShowAboutDialogAsync();
 
-                // Wire up Edit > Find menu and find bar controls
-                FindMenuItem.Click += (_, _) => ShowFindBar();
+                // Wire up Edit > Find/Replace menu and find bar controls
+                FindMenuItem.Click += (_, _) => ShowFindBar(showReplace: false);
+                ReplaceMenuItem.Click += (_, _) => ShowFindBar(showReplace: true);
                 FindCloseButton.Click += (_, _) => HideFindBar();
-                FindNextButton.Click += (_, _) => NavigateFindMatch(+1);
-                FindPrevButton.Click += (_, _) => NavigateFindMatch(-1);
-                FindTextBox.TextChanged += (_, _) => PerformFind(FindTextBox.Text);
+                FindNextButton.Click += (_, _) => FindNext();
+                FindPrevButton.Click += (_, _) => FindPrevious();
+                FindTextBox.TextChanged += (_, _) => PerformFind();
                 FindTextBox.KeyDown += OnFindTextBoxKeyDown;
+                ReplaceOneButton.Click += (_, _) => ReplaceOne();
+                ReplaceAllButton.Click += (_, _) => ReplaceAll();
 
                 // Wire up navigation buttons
                 _backButton = this.FindControl<Button>("NavBackButton");
@@ -569,22 +571,11 @@ public partial class MainWindow : Window
     {
         try
         {
-            // Clear stale find state before re-rendering
-            _currentHighlightBorder = null;
-            _findMatches.Clear();
-            _currentFindIndex = -1;
-            if (FindBar.IsVisible)
-                FindStatusText.Text = "";
-
             PreviewPanel.Children.Clear();
             if (_renderer == null || string.IsNullOrEmpty(markdown)) return;
 
             foreach (var control in _renderer.Render(markdown))
                 PreviewPanel.Children.Add(control);
-
-            // Re-run search if the find bar is open
-            if (FindBar.IsVisible && !string.IsNullOrEmpty(FindTextBox.Text))
-                PerformFind(FindTextBox.Text);
         }
         catch (Exception ex)
         {
@@ -866,11 +857,19 @@ public partial class MainWindow : Window
 
     private void OnNavigationKeyDown(object? sender, Avalonia.Input.KeyEventArgs e)
     {
-        // Ctrl+F: open find bar
+        // Ctrl+F: open find bar (find only)
         if (e.Key == Avalonia.Input.Key.F && e.KeyModifiers == Avalonia.Input.KeyModifiers.Control)
         {
             e.Handled = true;
-            ShowFindBar();
+            ShowFindBar(showReplace: false);
+            return;
+        }
+
+        // Ctrl+H: open find bar with replace
+        if (e.Key == Avalonia.Input.Key.H && e.KeyModifiers == Avalonia.Input.KeyModifiers.Control)
+        {
+            e.Handled = true;
+            ShowFindBar(showReplace: true);
             return;
         }
 
@@ -886,7 +885,10 @@ public partial class MainWindow : Window
         if (e.Key == Avalonia.Input.Key.F3 && FindBar.IsVisible)
         {
             e.Handled = true;
-            NavigateFindMatch(e.KeyModifiers.HasFlag(Avalonia.Input.KeyModifiers.Shift) ? -1 : +1);
+            if (e.KeyModifiers.HasFlag(Avalonia.Input.KeyModifiers.Shift))
+                FindPrevious();
+            else
+                FindNext();
             return;
         }
 
@@ -920,22 +922,28 @@ public partial class MainWindow : Window
         }
     }
 
-    // ── Find in preview ─────────────────────────────────────────────
+    // ── Find and Replace in editor ─────────────────────────────────
 
-    private void ShowFindBar()
+    private void ShowFindBar(bool showReplace)
     {
         FindBar.IsVisible = true;
+        ReplaceRow.IsVisible = showReplace;
         FindTextBox.Focus();
         FindTextBox.SelectAll();
+
+        // Seed the find box with the current editor selection
+        if (!string.IsNullOrEmpty(EditorTextBox.SelectedText))
+            FindTextBox.Text = EditorTextBox.SelectedText;
     }
 
     private void HideFindBar()
     {
         FindBar.IsVisible = false;
-        ClearFindHighlight();
-        _findMatches.Clear();
+        _findMatchPositions.Clear();
+        _findMatchCount = 0;
         _currentFindIndex = -1;
         FindStatusText.Text = "";
+        EditorTextBox.Focus();
     }
 
     private void OnFindTextBoxKeyDown(object? sender, Avalonia.Input.KeyEventArgs e)
@@ -943,7 +951,10 @@ public partial class MainWindow : Window
         if (e.Key == Avalonia.Input.Key.Enter)
         {
             e.Handled = true;
-            NavigateFindMatch(e.KeyModifiers.HasFlag(Avalonia.Input.KeyModifiers.Shift) ? -1 : +1);
+            if (e.KeyModifiers.HasFlag(Avalonia.Input.KeyModifiers.Shift))
+                FindPrevious();
+            else
+                FindNext();
         }
         else if (e.Key == Avalonia.Input.Key.Escape)
         {
@@ -952,25 +963,45 @@ public partial class MainWindow : Window
         }
     }
 
-    private void PerformFind(string? searchText)
+    private void PerformFind()
     {
-        ClearFindHighlight();
-        _findMatches.Clear();
+        _findMatchPositions.Clear();
+        _findMatchCount = 0;
         _currentFindIndex = -1;
 
-        if (string.IsNullOrEmpty(searchText))
+        var searchText = FindTextBox.Text;
+        var text = EditorTextBox.Text ?? string.Empty;
+
+        if (string.IsNullOrEmpty(searchText) || string.IsNullOrEmpty(text))
         {
             FindStatusText.Text = "";
             return;
         }
 
-        CollectMatchingTextBlocks(PreviewPanel, searchText);
-
-        if (_findMatches.Count > 0)
+        var pos = 0;
+        while (pos < text.Length)
         {
+            var idx = text.IndexOf(searchText, pos, StringComparison.OrdinalIgnoreCase);
+            if (idx < 0) break;
+            _findMatchPositions.Add(idx);
+            pos = idx + searchText.Length;
+        }
+        _findMatchCount = _findMatchPositions.Count;
+
+        if (_findMatchCount > 0)
+        {
+            // Jump to the first match at or after the current caret position
+            var caret = EditorTextBox.CaretIndex;
             _currentFindIndex = 0;
-            HighlightCurrentMatch();
-            FindStatusText.Text = $"1 of {_findMatches.Count}";
+            for (int i = 0; i < _findMatchPositions.Count; i++)
+            {
+                if (_findMatchPositions[i] >= caret)
+                {
+                    _currentFindIndex = i;
+                    break;
+                }
+            }
+            SelectCurrentMatch(searchText.Length);
         }
         else
         {
@@ -978,152 +1009,99 @@ public partial class MainWindow : Window
         }
     }
 
-    private void NavigateFindMatch(int direction)
+    private void FindNext()
     {
-        if (_findMatches.Count == 0) return;
-
-        ClearFindHighlight();
-        _currentFindIndex = (_currentFindIndex + direction + _findMatches.Count) % _findMatches.Count;
-        HighlightCurrentMatch();
-        FindStatusText.Text = $"{_currentFindIndex + 1} of {_findMatches.Count}";
+        if (_findMatchCount == 0) return;
+        _currentFindIndex = (_currentFindIndex + 1) % _findMatchCount;
+        SelectCurrentMatch(FindTextBox.Text?.Length ?? 0);
     }
 
-    private void HighlightCurrentMatch()
+    private void FindPrevious()
     {
-        if (_currentFindIndex < 0 || _currentFindIndex >= _findMatches.Count) return;
+        if (_findMatchCount == 0) return;
+        _currentFindIndex = (_currentFindIndex - 1 + _findMatchCount) % _findMatchCount;
+        SelectCurrentMatch(FindTextBox.Text?.Length ?? 0);
+    }
 
-        var matchBlock = _findMatches[_currentFindIndex];
+    private void SelectCurrentMatch(int length)
+    {
+        if (_currentFindIndex < 0 || _currentFindIndex >= _findMatchPositions.Count) return;
 
-        // Find the top-level PreviewPanel child that contains this TextBlock
-        // so we can scroll it into view and highlight it
-        var topLevelChild = FindPreviewPanelAncestor(matchBlock) ?? (Control)matchBlock;
+        var pos = _findMatchPositions[_currentFindIndex];
+        EditorTextBox.SelectionStart = pos;
+        EditorTextBox.SelectionEnd = pos + length;
+        EditorTextBox.CaretIndex = pos + length;
+        FindStatusText.Text = $"{_currentFindIndex + 1} of {_findMatchCount}";
+    }
 
-        // Scroll the match into view
-        topLevelChild.BringIntoView();
+    private void ReplaceOne()
+    {
+        var searchText = FindTextBox.Text;
+        var replaceText = ReplaceTextBox.Text ?? string.Empty;
+        if (string.IsNullOrEmpty(searchText) || _findMatchCount == 0) return;
 
-        // Apply a highlight by inserting a colored Border wrapper
-        // around the top-level child
-        var parent = topLevelChild.Parent;
-        if (parent is Panel panel)
+        // If the current selection matches the search text, replace it
+        var selected = EditorTextBox.SelectedText;
+        if (string.Equals(selected, searchText, StringComparison.OrdinalIgnoreCase))
         {
-            var index = panel.Children.IndexOf(topLevelChild);
-            if (index >= 0)
+            var pos = EditorTextBox.SelectionStart;
+            var text = EditorTextBox.Text ?? string.Empty;
+            EditorTextBox.Text = string.Concat(
+                text.AsSpan(0, pos),
+                replaceText,
+                text.AsSpan(pos + searchText.Length));
+            EditorTextBox.CaretIndex = pos + replaceText.Length;
+
+            // Re-index matches after replacement
+            PerformFind();
+
+            if (DataContext is MainWindowViewModel vm)
+                vm.StatusText = "Replaced 1 occurrence";
+        }
+        else
+        {
+            // No active match selected — just find next
+            FindNext();
+        }
+    }
+
+    private void ReplaceAll()
+    {
+        var searchText = FindTextBox.Text;
+        var replaceText = ReplaceTextBox.Text ?? string.Empty;
+        if (string.IsNullOrEmpty(searchText)) return;
+
+        var text = EditorTextBox.Text ?? string.Empty;
+        var count = 0;
+        var result = new System.Text.StringBuilder(text.Length);
+        var pos = 0;
+
+        while (pos < text.Length)
+        {
+            var idx = text.IndexOf(searchText, pos, StringComparison.OrdinalIgnoreCase);
+            if (idx < 0)
             {
-                panel.Children.RemoveAt(index);
-                _currentHighlightBorder = new Border
-                {
-                    Background = new SolidColorBrush(Color.Parse("#FFFDE7")),
-                    BorderBrush = new SolidColorBrush(Color.Parse("#FBC02D")),
-                    BorderThickness = new Thickness(2),
-                    CornerRadius = new CornerRadius(4),
-                    Padding = new Thickness(2),
-                    Child = topLevelChild,
-                    Tag = panel,
-                };
-                panel.Children.Insert(index, _currentHighlightBorder);
-                _currentHighlightBorder.BringIntoView();
+                result.Append(text, pos, text.Length - pos);
+                break;
             }
-        }
-    }
-
-    private void ClearFindHighlight()
-    {
-        if (_currentHighlightBorder == null) return;
-
-        var child = _currentHighlightBorder.Child;
-        if (child == null) return;
-
-        var parent = _currentHighlightBorder.Parent;
-        if (parent is Panel panel)
-        {
-            var index = panel.Children.IndexOf(_currentHighlightBorder);
-            if (index >= 0)
-            {
-                _currentHighlightBorder.Child = null;
-                panel.Children.RemoveAt(index);
-                panel.Children.Insert(index, child);
-            }
-        }
-        _currentHighlightBorder = null;
-    }
-
-    /// <summary>
-    /// Finds the direct child of PreviewPanel that is an ancestor of the given control.
-    /// </summary>
-    private Control? FindPreviewPanelAncestor(Control control)
-    {
-        Control? current = control;
-        while (current != null)
-        {
-            if (current.Parent == PreviewPanel)
-                return current;
-            current = current.Parent as Control;
-        }
-        return null;
-    }
-
-    /// <summary>
-    /// Recursively walks the visual tree to find TextBlock/SelectableTextBlock
-    /// controls whose text content contains the search string.
-    /// </summary>
-    private void CollectMatchingTextBlocks(Control parent, string searchText)
-    {
-        if (parent is TextBlock tb)
-        {
-            var text = ExtractTextBlockContent(tb);
-            if (!string.IsNullOrEmpty(text)
-                && text.Contains(searchText, StringComparison.OrdinalIgnoreCase))
-            {
-                _findMatches.Add(tb);
-            }
+            result.Append(text, pos, idx - pos);
+            result.Append(replaceText);
+            pos = idx + searchText.Length;
+            count++;
         }
 
-        if (parent is Panel panel)
+        if (count > 0)
         {
-            foreach (var child in panel.Children)
-            {
-                if (child is Control c)
-                    CollectMatchingTextBlocks(c, searchText);
-            }
+            EditorTextBox.Text = result.ToString();
+            PerformFind();
+
+            if (DataContext is MainWindowViewModel vm)
+                vm.StatusText = $"Replaced {count} occurrence{(count == 1 ? "" : "s")}";
         }
-        else if (parent is Decorator decorator && decorator.Child is Control dc)
+        else
         {
-            CollectMatchingTextBlocks(dc, searchText);
+            FindStatusText.Text = "No matches";
         }
-        else if (parent is ContentControl cc && cc.Content is Control ccc)
-        {
-            CollectMatchingTextBlocks(ccc, searchText);
-        }
-    }
-
-    /// <summary>
-    /// Extracts the full text content from a TextBlock, handling both
-    /// the Text property and Inlines collection.
-    /// </summary>
-    private static string ExtractTextBlockContent(TextBlock tb)
-    {
-        // If Text property is set directly, use it
-        if (!string.IsNullOrEmpty(tb.Text))
-            return tb.Text;
-
-        // Otherwise, extract text from the Inlines collection
-        if (tb.Inlines is { Count: > 0 })
-            return string.Concat(tb.Inlines.Select(ExtractInlineText));
-
-        return string.Empty;
-    }
-
-    private static string ExtractInlineText(Inline inline)
-    {
-        return inline switch
-        {
-            Run run => run.Text ?? string.Empty,
-            InlineUIContainer uic when uic.Child is TextBlock innerTb
-                => ExtractTextBlockContent(innerTb),
-            Span span when span.Inlines is { Count: > 0 }
-                => string.Concat(span.Inlines.Select(ExtractInlineText)),
-            _ => string.Empty,
-        };
     }
 
     // ── File watcher ────────────────────────────────────────────────

@@ -43,6 +43,7 @@
             </MenuItem>
             <MenuItem Header="_Edit">
                 <MenuItem Header="_Find..." Name="FindMenuItem" InputGesture="Ctrl+F" />
+                <MenuItem Header="Find and _Replace..." Name="ReplaceMenuItem" InputGesture="Ctrl+H" />
             </MenuItem>
             <MenuItem Header="_View">
                 <MenuItem Header="_Split View" Command="{Binding ViewSplitCommand}" />
@@ -85,6 +86,35 @@
                     <Border DockPanel.Dock="Top" Background="#f6f8fa" Padding="10,6" BorderBrush="#d1d9e0" BorderThickness="0,0,0,1">
                         <TextBlock Text="EDITOR" FontSize="11" FontWeight="SemiBold" Foreground="#656d76" />
                     </Border>
+
+                    <!-- Find/Replace Bar (initially hidden) -->
+                    <Border DockPanel.Dock="Top" Name="FindBar" IsVisible="False"
+                            Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}"
+                            Padding="6" BorderBrush="#d1d9e0" BorderThickness="0,0,0,1">
+                        <StackPanel Spacing="4">
+                            <!-- Find row -->
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <TextBox Name="FindTextBox" Width="250" Watermark="Find..." FontSize="13" />
+                                <Button Name="FindPrevButton" Content="▲" FontSize="11" Padding="8,4"
+                                        ToolTip.Tip="Previous match (Shift+F3)" />
+                                <Button Name="FindNextButton" Content="▼" FontSize="11" Padding="8,4"
+                                        ToolTip.Tip="Next match (F3)" />
+                                <TextBlock Name="FindStatusText" VerticalAlignment="Center"
+                                           FontSize="12" Margin="8,0,0,0" Opacity="0.7" />
+                                <Button Name="FindCloseButton" Content="✕" FontSize="11" Padding="8,4"
+                                        ToolTip.Tip="Close (Escape)" />
+                            </StackPanel>
+                            <!-- Replace row (initially hidden) -->
+                            <StackPanel Orientation="Horizontal" Spacing="4" Name="ReplaceRow" IsVisible="False">
+                                <TextBox Name="ReplaceTextBox" Width="250" Watermark="Replace with..." FontSize="13" />
+                                <Button Name="ReplaceOneButton" Content="Replace" FontSize="11" Padding="8,4"
+                                        ToolTip.Tip="Replace current match" />
+                                <Button Name="ReplaceAllButton" Content="Replace All" FontSize="11" Padding="8,4"
+                                        ToolTip.Tip="Replace all matches" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
                     <TextBox Name="EditorTextBox"
                              Text="{Binding MarkdownText, Mode=TwoWay}"
                              AcceptsReturn="True"
@@ -109,24 +139,6 @@
                     <Border DockPanel.Dock="Top" Background="#f6f8fa" Padding="10,6" BorderBrush="#d1d9e0" BorderThickness="0,0,0,1">
                         <TextBlock Text="PREVIEW" FontSize="11" FontWeight="SemiBold" Foreground="#656d76" />
                     </Border>
-
-                    <!-- Find Bar (initially hidden) -->
-                    <Border DockPanel.Dock="Top" Name="FindBar" IsVisible="False"
-                            Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}"
-                            Padding="6" BorderBrush="#d1d9e0" BorderThickness="0,0,0,1">
-                        <StackPanel Orientation="Horizontal" Spacing="4">
-                            <TextBox Name="FindTextBox" Width="250" Watermark="Find..." FontSize="13" />
-                            <Button Name="FindPrevButton" Content="▲" FontSize="11" Padding="8,4"
-                                    ToolTip.Tip="Previous match (Shift+F3)" />
-                            <Button Name="FindNextButton" Content="▼" FontSize="11" Padding="8,4"
-                                    ToolTip.Tip="Next match (F3)" />
-                            <TextBlock Name="FindStatusText" VerticalAlignment="Center"
-                                       FontSize="12" Margin="8,0,0,0" Opacity="0.7" />
-                            <Button Name="FindCloseButton" Content="✕" FontSize="11" Padding="8,4"
-                                    ToolTip.Tip="Close find bar (Escape)" />
-                        </StackPanel>
-                    </Border>
-
                     <ScrollViewer Name="PreviewScrollViewer"
                                 HorizontalScrollBarVisibility="Auto"
                                 VerticalScrollBarVisibility="Auto">
