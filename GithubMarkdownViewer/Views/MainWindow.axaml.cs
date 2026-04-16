@@ -38,6 +38,12 @@ public partial class MainWindow : Window
     private int _findMatchCount;
     private int _currentFindIndex = -1;
     private readonly List<int> _findMatchPositions = new();
+    private IBrush? _originalSelectionBrush;
+    private IBrush? _originalSelectionForeground;
+
+    // High-contrast find highlight brushes
+    private static readonly IBrush FindHighlightBrush = new SolidColorBrush(Color.Parse("#FBC02D"));
+    private static readonly IBrush FindHighlightForeground = new SolidColorBrush(Color.Parse("#1a1a1a"));
 
     // File watcher state
     private FileSystemWatcher? _fileWatcher;
@@ -931,6 +937,12 @@ public partial class MainWindow : Window
         FindTextBox.Focus();
         FindTextBox.SelectAll();
 
+        // Save original selection colors and apply high-contrast find highlight
+        _originalSelectionBrush ??= EditorTextBox.SelectionBrush;
+        _originalSelectionForeground ??= EditorTextBox.SelectionForegroundBrush;
+        EditorTextBox.SelectionBrush = FindHighlightBrush;
+        EditorTextBox.SelectionForegroundBrush = FindHighlightForeground;
+
         // Seed the find box with the current editor selection
         if (!string.IsNullOrEmpty(EditorTextBox.SelectedText))
             FindTextBox.Text = EditorTextBox.SelectedText;
@@ -943,6 +955,13 @@ public partial class MainWindow : Window
         _findMatchCount = 0;
         _currentFindIndex = -1;
         FindStatusText.Text = "";
+
+        // Restore original selection colors
+        EditorTextBox.SelectionBrush = _originalSelectionBrush;
+        EditorTextBox.SelectionForegroundBrush = _originalSelectionForeground;
+        _originalSelectionBrush = null;
+        _originalSelectionForeground = null;
+
         EditorTextBox.Focus();
     }
 
