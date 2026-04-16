@@ -1009,7 +1009,7 @@ public partial class MainWindow : Window
 
         if (_findMatchCount > 0)
         {
-            // Jump to the first match at or after the current caret position
+            // Pick the first match at or after the current caret position
             var caret = EditorTextBox.CaretIndex;
             _currentFindIndex = 0;
             for (int i = 0; i < _findMatchPositions.Count; i++)
@@ -1020,7 +1020,9 @@ public partial class MainWindow : Window
                     break;
                 }
             }
-            SelectCurrentMatch(searchText.Length);
+            // During incremental typing, just update the counter — don't
+            // steal focus from the find text box.
+            FindStatusText.Text = $"{_currentFindIndex + 1} of {_findMatchCount}";
         }
         else
         {
@@ -1047,6 +1049,9 @@ public partial class MainWindow : Window
         if (_currentFindIndex < 0 || _currentFindIndex >= _findMatchPositions.Count) return;
 
         var pos = _findMatchPositions[_currentFindIndex];
+
+        // Focus the editor so the selection highlight is rendered
+        EditorTextBox.Focus();
         EditorTextBox.SelectionStart = pos;
         EditorTextBox.SelectionEnd = pos + length;
         EditorTextBox.CaretIndex = pos + length;
