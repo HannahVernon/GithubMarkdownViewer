@@ -1456,6 +1456,12 @@ public partial class MainWindow : Window
         MimeTypes = new[] { "text/html" }
     };
 
+    private static readonly FilePickerFileType TextFileType = new("Text Files")
+    {
+        Patterns = new[] { "*.txt" },
+        MimeTypes = new[] { "text/plain" }
+    };
+
     private async Task<string?> OpenFileDialogAsync()
     {
         var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
@@ -1475,13 +1481,17 @@ public partial class MainWindow : Window
             : "document.md";
 
         var isHtml = suggestedPath?.EndsWith(".html") == true || suggestedPath?.EndsWith(".htm") == true;
-        var defaultType = isHtml ? HtmlFileType : MarkdownFileType;
+        var isTxt = suggestedPath?.EndsWith(".txt") == true;
+
+        var defaultType = isHtml ? HtmlFileType : isTxt ? TextFileType : MarkdownFileType;
+        var title = isHtml ? "Export as HTML" : isTxt ? "Export as Text" : "Save Markdown File";
+        var defaultExt = isHtml ? "html" : isTxt ? "txt" : "md";
 
         var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
-            Title = isHtml ? "Export as HTML" : "Save Markdown File",
+            Title = title,
             SuggestedFileName = suggestedName,
-            DefaultExtension = isHtml ? "html" : "md",
+            DefaultExtension = defaultExt,
             FileTypeChoices = new List<FilePickerFileType> { defaultType, FilePickerFileTypes.All }
         });
 

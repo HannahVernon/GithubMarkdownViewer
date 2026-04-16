@@ -452,6 +452,32 @@ public partial class MainWindowViewModel : ViewModelBase
         }
     }
 
+    [RelayCommand]
+    private async Task ExportText()
+    {
+        if (SaveFileDialog == null) return;
+
+        var suggestedName = CurrentFilePath != null
+            ? Path.ChangeExtension(CurrentFilePath, ".txt")
+            : null;
+        var path = await SaveFileDialog(suggestedName);
+        if (path == null) return;
+
+        try
+        {
+            var textService = new MarkdownToTextService(_markdownService.Pipeline);
+            var text = textService.Convert(MarkdownText);
+            await File.WriteAllTextAsync(path, text);
+            StatusText = $"Exported text: {Path.GetFileName(path)}";
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Error("Failed to export text", ex);
+            if (ShowMessageDialog != null)
+                await ShowMessageDialog("Error", "An error occurred while exporting text.");
+        }
+    }
+
     // Delegate for unsaved-changes prompt: returns "save", "discard", or "cancel"
     public Func<Task<string>>? UnsavedChangesDialog { get; set; }
 

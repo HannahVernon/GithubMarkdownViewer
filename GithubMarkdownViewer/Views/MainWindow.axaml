@@ -38,6 +38,7 @@
                 <MenuItem Header="Save _As..." Command="{Binding SaveFileAsCommand}" InputGesture="Ctrl+Shift+S" />
                 <Separator />
                 <MenuItem Header="_Export HTML..." Command="{Binding ExportHtmlCommand}" InputGesture="Ctrl+Shift+E" />
+                <MenuItem Header="Export _Text..." Command="{Binding ExportTextCommand}" />
                 <Separator />
                 <MenuItem Header="E_xit" Command="{Binding ExitAppCommand}" InputGesture="Alt+F4" />
             </MenuItem>
