@@ -9,6 +9,7 @@ using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Documents;
 using Avalonia.Controls.Primitives;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
@@ -431,6 +432,8 @@ public partial class MainWindow : Window
                 _ = InitContentAsync(vm);
 
                 _renderer.SetFont(vm.FontFamilyName, vm.FontSizePx, vm.EditorFontWeight);
+                Editor.FontWeight = vm.EditorFontWeight;
+                Editor.TextArea.TextView.SetValue(TextElement.FontWeightProperty, vm.EditorFontWeight);
                 _renderer.SetWordWrap(vm.WordWrap);
                 ApplyWordWrapScrollBehavior(vm.WordWrap);
                 ApplyTheme(vm.ThemeMode);
@@ -564,9 +567,14 @@ public partial class MainWindow : Window
             // Font changes: update renderer and force re-render
             if (e.PropertyName is nameof(MainWindowViewModel.FontFamilyName)
                                or nameof(MainWindowViewModel.FontSizePt)
-                               or nameof(MainWindowViewModel.FontWeightName))
+                               or nameof(MainWindowViewModel.FontWeightName)
+                               or nameof(MainWindowViewModel.EditorFontWeight))
             {
                 _renderer?.SetFont(vm.FontFamilyName, vm.FontSizePx, vm.EditorFontWeight);
+                // AvaloniaEdit doesn't propagate FontWeight to its internal TextView,
+                // so we must push it to both the outer control and the inner rendering surface.
+                Editor.FontWeight = vm.EditorFontWeight;
+                Editor.TextArea.TextView.SetValue(TextElement.FontWeightProperty, vm.EditorFontWeight);
                 UpdatePreview(vm.MarkdownText);
             }
 
