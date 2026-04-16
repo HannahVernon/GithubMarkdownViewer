@@ -3,6 +3,7 @@
         xmlns:vm="using:GithubMarkdownViewer.ViewModels"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:ae="clr-namespace:AvaloniaEdit;assembly=AvaloniaEdit"
         mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="700"
         x:Class="GithubMarkdownViewer.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
@@ -116,16 +117,15 @@
                         </StackPanel>
                     </Border>
 
-                    <TextBox Name="EditorTextBox"
-                             Text="{Binding MarkdownText, Mode=TwoWay}"
-                             AcceptsReturn="True"
-                             AcceptsTab="True"
-                             TextWrapping="NoWrap"
+                    <ae:TextEditor Name="Editor"
+                             ShowLineNumbers="True"
                              FontFamily="{Binding EditorFontFamily}"
                              FontSize="{Binding FontSizePx}"
                              Padding="12"
                              BorderThickness="0"
-                             CornerRadius="0" />
+                             CornerRadius="0"
+                             HorizontalScrollBarVisibility="Auto"
+                             VerticalScrollBarVisibility="Auto" />
                 </DockPanel>
             </Border>
 

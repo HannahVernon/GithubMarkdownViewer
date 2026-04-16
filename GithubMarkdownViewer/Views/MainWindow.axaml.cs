@@ -14,6 +14,8 @@ using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using AvaloniaEdit;
+using AvaloniaEdit.Document;
 using GithubMarkdownViewer.Services;
 using GithubMarkdownViewer.Models;
 using GithubMarkdownViewer.ViewModels;
@@ -27,6 +29,7 @@ public partial class MainWindow : Window
     private bool _previewDirty;
     private ScrollViewer? _editorScrollViewer;
     private bool _isSyncingScroll;
+    private bool _suppressTextChanged;
 
     // Navigation history for .md link traversal
     private readonly Stack<string> _backStack = new();
@@ -38,12 +41,7 @@ public partial class MainWindow : Window
     private int _findMatchCount;
     private int _currentFindIndex = -1;
     private readonly List<int> _findMatchPositions = new();
-    private IBrush? _originalSelectionBrush;
-    private IBrush? _originalSelectionForeground;
-
-    // High-contrast find highlight brushes
-    private static readonly IBrush FindHighlightBrush = new SolidColorBrush(Color.Parse("#FBC02D"));
-    private static readonly IBrush FindHighlightForeground = new SolidColorBrush(Color.Parse("#1a1a1a"));
+    private FindHighlightRenderer? _findHighlightRenderer;
 
     // File watcher state
     private FileSystemWatcher? _fileWatcher;
@@ -87,6 +85,8 @@ public partial class MainWindow : Window
 
         if (_renderer != null)
             _renderer.LinkClicked -= OnRendererLinkClicked;
+
+        Editor.TextChanged -= OnEditorTextChanged;
 
         if (_editorScrollViewer != null)
             _editorScrollViewer.PropertyChanged -= OnEditorScrollPropertyChanged;
@@ -377,9 +377,16 @@ public partial class MainWindow : Window
 
                 // Set up scroll sync — try immediately since template may already
                 // be applied, and also subscribe as fallback for future applies.
-                EditorTextBox.TemplateApplied += OnEditorTemplateApplied;
+                Editor.TemplateApplied += OnEditorTemplateApplied;
                 // Deferred attempt: the visual tree is ready after the current layout pass
                 Dispatcher.UIThread.Post(() => TryInitScrollSync(), DispatcherPriority.Loaded);
+
+                // Wire up AvaloniaEdit text-changed to sync with ViewModel
+                Editor.TextChanged += OnEditorTextChanged;
+
+                // Install the find highlight renderer
+                _findHighlightRenderer = new FindHighlightRenderer();
+                Editor.TextArea.TextView.BackgroundRenderers.Add(_findHighlightRenderer);
 
                 // Wire up recent files menu
                 vm.RecentFiles.CollectionChanged += OnRecentFilesChanged;
@@ -441,7 +448,7 @@ public partial class MainWindow : Window
     {
         if (_editorScrollViewer != null) return; // already initialized
 
-        _editorScrollViewer = EditorTextBox
+        _editorScrollViewer = Editor
             .GetVisualDescendants()
             .OfType<ScrollViewer>()
             .FirstOrDefault();
@@ -532,6 +539,14 @@ public partial class MainWindow : Window
             if (e.PropertyName is nameof(MainWindowViewModel.PreviewMarkdown)
                                or nameof(MainWindowViewModel.MarkdownText))
             {
+                // Sync ViewModel → Editor when text changes programmatically (file load, reload)
+                if (!_suppressTextChanged && Editor.Text != vm.MarkdownText)
+                {
+                    _suppressTextChanged = true;
+                    Editor.Text = vm.MarkdownText;
+                    _suppressTextChanged = false;
+                }
+
                 // Debounce: restart timer on each keystroke
                 _previewDirty = true;
                 _previewTimer?.Stop();
@@ -928,6 +943,19 @@ public partial class MainWindow : Window
         }
     }
 
+    // ── AvaloniaEdit text sync ─────────────────────────────────────
+
+    private void OnEditorTextChanged(object? sender, EventArgs e)
+    {
+        if (_suppressTextChanged) return;
+        if (DataContext is MainWindowViewModel vm)
+        {
+            _suppressTextChanged = true;
+            vm.MarkdownText = Editor.Text;
+            _suppressTextChanged = false;
+        }
+    }
+
     // ── Find and Replace in editor ─────────────────────────────────
 
     private void ShowFindBar(bool showReplace)
@@ -937,15 +965,9 @@ public partial class MainWindow : Window
         FindTextBox.Focus();
         FindTextBox.SelectAll();
 
-        // Save original selection colors and apply high-contrast find highlight
-        _originalSelectionBrush ??= EditorTextBox.SelectionBrush;
-        _originalSelectionForeground ??= EditorTextBox.SelectionForegroundBrush;
-        EditorTextBox.SelectionBrush = FindHighlightBrush;
-        EditorTextBox.SelectionForegroundBrush = FindHighlightForeground;
-
         // Seed the find box with the current editor selection
-        if (!string.IsNullOrEmpty(EditorTextBox.SelectedText))
-            FindTextBox.Text = EditorTextBox.SelectedText;
+        if (!string.IsNullOrEmpty(Editor.SelectedText))
+            FindTextBox.Text = Editor.SelectedText;
     }
 
     private void HideFindBar()
@@ -956,13 +978,11 @@ public partial class MainWindow : Window
         _currentFindIndex = -1;
         FindStatusText.Text = "";
 
-        // Restore original selection colors
-        EditorTextBox.SelectionBrush = _originalSelectionBrush;
-        EditorTextBox.SelectionForegroundBrush = _originalSelectionForeground;
-        _originalSelectionBrush = null;
-        _originalSelectionForeground = null;
+        // Clear find highlights
+        _findHighlightRenderer?.ClearMatches();
+        Editor.TextArea.TextView.InvalidateLayer(AvaloniaEdit.Rendering.KnownLayer.Selection);
 
-        EditorTextBox.Focus();
+        Editor.Focus();
     }
 
     private void OnFindTextBoxKeyDown(object? sender, Avalonia.Input.KeyEventArgs e)
@@ -989,11 +1009,13 @@ public partial class MainWindow : Window
         _currentFindIndex = -1;
 
         var searchText = FindTextBox.Text;
-        var text = EditorTextBox.Text ?? string.Empty;
+        var text = Editor.Text ?? string.Empty;
 
         if (string.IsNullOrEmpty(searchText) || string.IsNullOrEmpty(text))
         {
             FindStatusText.Text = "";
+            _findHighlightRenderer?.ClearMatches();
+            Editor.TextArea.TextView.InvalidateLayer(AvaloniaEdit.Rendering.KnownLayer.Selection);
             return;
         }
 
@@ -1010,7 +1032,7 @@ public partial class MainWindow : Window
         if (_findMatchCount > 0)
         {
             // Pick the first match at or after the current caret position
-            var caret = EditorTextBox.CaretIndex;
+            var caret = Editor.CaretOffset;
             _currentFindIndex = 0;
             for (int i = 0; i < _findMatchPositions.Count; i++)
             {
@@ -1020,14 +1042,14 @@ public partial class MainWindow : Window
                     break;
                 }
             }
-            // During incremental typing, just update the counter — don't
-            // steal focus from the find text box.
             FindStatusText.Text = $"{_currentFindIndex + 1} of {_findMatchCount}";
         }
         else
         {
             FindStatusText.Text = "No matches";
         }
+
+        UpdateFindHighlights(searchText.Length);
     }
 
     private void FindNext()
@@ -1050,12 +1072,32 @@ public partial class MainWindow : Window
 
         var pos = _findMatchPositions[_currentFindIndex];
 
-        // Focus the editor so the selection highlight is rendered
-        EditorTextBox.Focus();
-        EditorTextBox.SelectionStart = pos;
-        EditorTextBox.SelectionEnd = pos + length;
-        EditorTextBox.CaretIndex = pos + length;
+        // Update highlight renderer to show current match
+        UpdateFindHighlights(length);
+
+        // Move caret and select the match so it scrolls into view
+        Editor.Select(pos, length);
+        Editor.CaretOffset = pos + length;
+        Editor.TextArea.Caret.BringCaretToView();
         FindStatusText.Text = $"{_currentFindIndex + 1} of {_findMatchCount}";
+    }
+
+    private void UpdateFindHighlights(int matchLength)
+    {
+        if (_findHighlightRenderer == null) return;
+
+        var segments = new List<TextSegment>();
+        foreach (var matchPos in _findMatchPositions)
+        {
+            segments.Add(new TextSegment
+            {
+                StartOffset = matchPos,
+                Length = matchLength
+            });
+        }
+        _findHighlightRenderer.SetMatches(segments);
+        _findHighlightRenderer.CurrentMatchIndex = _currentFindIndex;
+        Editor.TextArea.TextView.InvalidateLayer(AvaloniaEdit.Rendering.KnownLayer.Selection);
     }
 
     private void ReplaceOne()
@@ -1065,16 +1107,11 @@ public partial class MainWindow : Window
         if (string.IsNullOrEmpty(searchText) || _findMatchCount == 0) return;
 
         // If the current selection matches the search text, replace it
-        var selected = EditorTextBox.SelectedText;
+        var selected = Editor.SelectedText;
         if (string.Equals(selected, searchText, StringComparison.OrdinalIgnoreCase))
         {
-            var pos = EditorTextBox.SelectionStart;
-            var text = EditorTextBox.Text ?? string.Empty;
-            EditorTextBox.Text = string.Concat(
-                text.AsSpan(0, pos),
-                replaceText,
-                text.AsSpan(pos + searchText.Length));
-            EditorTextBox.CaretIndex = pos + replaceText.Length;
+            var pos = Editor.SelectionStart;
+            Editor.Document.Replace(pos, searchText.Length, replaceText);
 
             // Re-index matches after replacement
             PerformFind();
@@ -1095,7 +1132,7 @@ public partial class MainWindow : Window
         var replaceText = ReplaceTextBox.Text ?? string.Empty;
         if (string.IsNullOrEmpty(searchText)) return;
 
-        var text = EditorTextBox.Text ?? string.Empty;
+        var text = Editor.Text ?? string.Empty;
         var count = 0;
         var result = new System.Text.StringBuilder(text.Length);
         var pos = 0;
@@ -1116,7 +1153,7 @@ public partial class MainWindow : Window
 
         if (count > 0)
         {
-            EditorTextBox.Text = result.ToString();
+            Editor.Text = result.ToString();
             PerformFind();
 
             if (DataContext is MainWindowViewModel vm)
@@ -1248,6 +1285,9 @@ public partial class MainWindow : Window
 
     private void ApplyWordWrapScrollBehavior(bool wordWrap)
     {
+        // AvaloniaEdit uses its own WordWrap property
+        Editor.WordWrap = wordWrap;
+
         // When wrapping, disable horizontal scroll so text has a width constraint to wrap against
         PreviewScrollViewer.HorizontalScrollBarVisibility =
             wordWrap ? Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled
