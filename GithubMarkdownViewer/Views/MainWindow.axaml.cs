@@ -434,6 +434,7 @@ public partial class MainWindow : Window
                 _renderer.SetFont(vm.FontFamilyName, vm.FontSizePx, vm.EditorFontWeight);
                 Editor.FontWeight = vm.EditorFontWeight;
                 Editor.TextArea.TextView.SetValue(TextElement.FontWeightProperty, vm.EditorFontWeight);
+                Editor.TextArea.TextView.Redraw();
                 _renderer.SetWordWrap(vm.WordWrap);
                 ApplyWordWrapScrollBehavior(vm.WordWrap);
                 ApplyTheme(vm.ThemeMode);
@@ -573,8 +574,11 @@ public partial class MainWindow : Window
                 _renderer?.SetFont(vm.FontFamilyName, vm.FontSizePx, vm.EditorFontWeight);
                 // AvaloniaEdit doesn't propagate FontWeight to its internal TextView,
                 // so we must push it to both the outer control and the inner rendering surface.
+                // After setting the property, we must force a full redraw because AvaloniaEdit
+                // caches the Typeface (which embeds FontWeight) in GlobalTextRunProperties.
                 Editor.FontWeight = vm.EditorFontWeight;
                 Editor.TextArea.TextView.SetValue(TextElement.FontWeightProperty, vm.EditorFontWeight);
+                Editor.TextArea.TextView.Redraw();
                 UpdatePreview(vm.MarkdownText);
             }
 
@@ -1480,6 +1484,13 @@ public partial class MainWindow : Window
             HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
         };
 
+        var applyButton = new Button
+        {
+            Content = "Apply",
+            Width = 80,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+        };
+
         var cancelButton = new Button
         {
             Content = "Cancel",
@@ -1496,10 +1507,23 @@ public partial class MainWindow : Window
             Margin = new Thickness(0, 16, 0, 0),
         };
         buttonPanel.Children.Add(okButton);
+        buttonPanel.Children.Add(applyButton);
         buttonPanel.Children.Add(cancelButton);
 
+        // Helper to apply current dialog selections to the editor
+        void ApplyFontSettings()
+        {
+            if (fontList.SelectedItem is string chosenFont)
+                vm.FontFamilyName = chosenFont;
+            if (sizeUpDown.Value.HasValue)
+                vm.FontSizePt = (double)sizeUpDown.Value.Value;
+            vm.FontWeightName = weightCombo.SelectedItem as string ?? "Regular";
+            vm.SaveSettings();
+        }
+
         bool accepted = false;
-        okButton.Click += (_, _) => { accepted = true; dialog.Close(); };
+        okButton.Click += (_, _) => { accepted = true; ApplyFontSettings(); dialog.Close(); };
+        applyButton.Click += (_, _) => ApplyFontSettings();
         cancelButton.Click += (_, _) => dialog.Close();
 
         // ── Layout ──────────────────────────────────────────────────
@@ -1518,25 +1542,28 @@ public partial class MainWindow : Window
         };
 
         dialog.Content = content;
+
+        // Save original values so Cancel can restore if Apply was used
+        var origFont = vm.FontFamilyName;
+        var origSize = vm.FontSizePt;
+        var origWeight = vm.FontWeightName;
+
         await dialog.ShowDialog(this);
 
-        if (!accepted) return;
+        if (!accepted)
+        {
+            // Restore original settings if Apply changed them before Cancel
+            if (vm.FontFamilyName != origFont || vm.FontSizePt != origSize || vm.FontWeightName != origWeight)
+            {
+                vm.FontFamilyName = origFont;
+                vm.FontSizePt = origSize;
+                vm.FontWeightName = origWeight;
+                vm.SaveSettings();
+            }
+            return;
+        }
 
-        // Apply changes
-        var fontChanged = (fontList.SelectedItem as string) != vm.FontFamilyName;
-        var sizeChanged = sizeUpDown.Value.HasValue && (double)sizeUpDown.Value.Value != vm.FontSizePt;
-        var weightChanged = (weightCombo.SelectedItem as string ?? "Regular") != vm.FontWeightName;
-
-        if (fontList.SelectedItem is string chosenFont)
-            vm.FontFamilyName = chosenFont;
-        if (sizeUpDown.Value.HasValue)
-            vm.FontSizePt = (double)sizeUpDown.Value.Value;
-        vm.FontWeightName = weightCombo.SelectedItem as string ?? "Regular";
-
-        vm.SaveSettings();
-
-        if (fontChanged || sizeChanged || weightChanged)
-            vm.StatusText = $"Font: {vm.FontFamilyName}, {vm.FontSizePt}pt, {vm.FontWeightName}";
+        vm.StatusText = $"Font: {vm.FontFamilyName}, {vm.FontSizePt}pt, {vm.FontWeightName}";
     }
 
     private static readonly FilePickerFileType MarkdownFileType = new("Markdown Files")
