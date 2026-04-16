@@ -3,6 +3,7 @@
         xmlns:vm="using:GithubMarkdownViewer.ViewModels"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:ae="clr-namespace:AvaloniaEdit;assembly=AvaloniaEdit"
         mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="700"
         x:Class="GithubMarkdownViewer.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
@@ -23,6 +24,8 @@
         <KeyBinding Gesture="Ctrl+Shift+E" Command="{Binding ExportHtmlCommand}" />
     </Window.KeyBindings>
 
+    <!-- Ctrl+F and F3/Shift+F3 are handled in code-behind via KeyDown -->
+
     <DockPanel>
         <!-- Menu Bar -->
         <Menu DockPanel.Dock="Top">
@@ -30,20 +33,37 @@
                 <MenuItem Header="_New" Command="{Binding NewFileCommand}" InputGesture="Ctrl+N" />
                 <MenuItem Header="_Open..." Command="{Binding OpenFileCommand}" InputGesture="Ctrl+O" />
                 <MenuItem Header="Recent _Files" Name="RecentFilesMenu" />
+                <MenuItem Header="_Reload" Command="{Binding ReloadFileCommand}" InputGesture="F5" />
                 <Separator />
                 <MenuItem Header="_Save" Command="{Binding SaveFileCommand}" InputGesture="Ctrl+S" />
                 <MenuItem Header="Save _As..." Command="{Binding SaveFileAsCommand}" InputGesture="Ctrl+Shift+S" />
                 <Separator />
                 <MenuItem Header="_Export HTML..." Command="{Binding ExportHtmlCommand}" InputGesture="Ctrl+Shift+E" />
+                <MenuItem Header="Export _Text..." Command="{Binding ExportTextCommand}" />
                 <Separator />
                 <MenuItem Header="E_xit" Command="{Binding ExitAppCommand}" InputGesture="Alt+F4" />
             </MenuItem>
+            <MenuItem Header="_Edit">
+                <MenuItem Header="_Find..." Name="FindMenuItem" InputGesture="Ctrl+F" />
+                <MenuItem Header="Find and _Replace..." Name="ReplaceMenuItem" InputGesture="Ctrl+H" />
+            </MenuItem>
             <MenuItem Header="_View">
-                <MenuItem Header="_Split View" Command="{Binding ViewSplitCommand}" />
-                <MenuItem Header="_Editor Only" Command="{Binding ViewEditorOnlyCommand}" />
-                <MenuItem Header="_Preview Only" Command="{Binding ViewPreviewOnlyCommand}" />
+                <MenuItem Header="_Layout">
+                    <MenuItem Header="_Split View" Command="{Binding ViewSplitCommand}" />
+                    <MenuItem Header="_Editor Only" Command="{Binding ViewEditorOnlyCommand}" />
+                    <MenuItem Header="_Preview Only" Command="{Binding ViewPreviewOnlyCommand}" />
+                </MenuItem>
                 <Separator />
-                <MenuItem Header="_Settings..." Command="{Binding OpenSettingsCommand}" />
+                <MenuItem Header="_Word Wrap" Name="WordWrapMenuItem" Command="{Binding ToggleWordWrapCommand}" />
+                <MenuItem Header="Line _Numbers" Name="LineNumbersMenuItem" Command="{Binding ToggleLineNumbersCommand}" />
+                <Separator />
+                <MenuItem Header="_Theme">
+                    <MenuItem Header="_System" Name="ThemeSystemMenuItem" />
+                    <MenuItem Header="_Light" Name="ThemeLightMenuItem" />
+                    <MenuItem Header="_Dark" Name="ThemeDarkMenuItem" />
+                </MenuItem>
+                <Separator />
+                <MenuItem Header="_Font..." Command="{Binding OpenSettingsCommand}" />
             </MenuItem>
             <MenuItem Header="_Help">
                 <MenuItem Header="_About..." Name="AboutMenuItem" />
@@ -79,16 +99,45 @@
                     <Border DockPanel.Dock="Top" Background="#f6f8fa" Padding="10,6" BorderBrush="#d1d9e0" BorderThickness="0,0,0,1">
                         <TextBlock Text="EDITOR" FontSize="11" FontWeight="SemiBold" Foreground="#656d76" />
                     </Border>
-                    <TextBox Name="EditorTextBox"
-                             Text="{Binding MarkdownText, Mode=TwoWay}"
-                             AcceptsReturn="True"
-                             AcceptsTab="True"
-                             TextWrapping="NoWrap"
+
+                    <!-- Find/Replace Bar (initially hidden) -->
+                    <Border DockPanel.Dock="Top" Name="FindBar" IsVisible="False"
+                            Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}"
+                            Padding="6" BorderBrush="#d1d9e0" BorderThickness="0,0,0,1">
+                        <StackPanel Spacing="4">
+                            <!-- Find row -->
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <TextBox Name="FindTextBox" Width="250" Watermark="Find..." FontSize="13" />
+                                <Button Name="FindPrevButton" Content="▲" FontSize="11" Padding="8,4"
+                                        ToolTip.Tip="Previous match (Shift+F3)" />
+                                <Button Name="FindNextButton" Content="▼" FontSize="11" Padding="8,4"
+                                        ToolTip.Tip="Next match (F3)" />
+                                <TextBlock Name="FindStatusText" VerticalAlignment="Center"
+                                           FontSize="12" Margin="8,0,0,0" Opacity="0.7" />
+                                <Button Name="FindCloseButton" Content="✕" FontSize="11" Padding="8,4"
+                                        ToolTip.Tip="Close (Escape)" />
+                            </StackPanel>
+                            <!-- Replace row (initially hidden) -->
+                            <StackPanel Orientation="Horizontal" Spacing="4" Name="ReplaceRow" IsVisible="False">
+                                <TextBox Name="ReplaceTextBox" Width="250" Watermark="Replace with..." FontSize="13" />
+                                <Button Name="ReplaceOneButton" Content="Replace" FontSize="11" Padding="8,4"
+                                        ToolTip.Tip="Replace current match" />
+                                <Button Name="ReplaceAllButton" Content="Replace All" FontSize="11" Padding="8,4"
+                                        ToolTip.Tip="Replace all matches" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <ae:TextEditor Name="Editor"
+                             ShowLineNumbers="{Binding ShowLineNumbers}"
                              FontFamily="{Binding EditorFontFamily}"
+                             FontWeight="{Binding EditorFontWeight}"
                              FontSize="{Binding FontSizePx}"
                              Padding="12"
                              BorderThickness="0"
-                             CornerRadius="0" />
+                             CornerRadius="0"
+                             HorizontalScrollBarVisibility="Auto"
+                             VerticalScrollBarVisibility="Auto" />
                 </DockPanel>
             </Border>
 

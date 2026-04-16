@@ -27,6 +27,7 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(WindowTitle))]
     [NotifyPropertyChangedFor(nameof(HasFile))]
+    [NotifyCanExecuteChangedFor(nameof(ReloadFileCommand))]
     private string? _currentFilePath;
 
     [ObservableProperty]
@@ -43,6 +44,9 @@ public partial class MainWindowViewModel : ViewModelBase
     private bool _wordWrap = true;
 
     [ObservableProperty]
+    private bool _showLineNumbers = true;
+
+    [ObservableProperty]
     private string _themeMode = "System";
 
     [ObservableProperty]
@@ -55,6 +59,10 @@ public partial class MainWindowViewModel : ViewModelBase
     private string _fontFamilyName = AppSettings.DefaultFontFamily;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(EditorFontWeight))]
+    private string _fontWeightName = "Regular";
+
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(FontSizePx))]
     private double _fontSizePt = AppSettings.DefaultFontSizePt;
 
@@ -63,16 +71,43 @@ public partial class MainWindowViewModel : ViewModelBase
     public ObservableCollection<string> RecentFiles { get; } = new();
 
     /// <summary>
-    /// FontFamily object for binding to the editor TextBox.
+    /// FontFamily object for binding to the editor.
     /// Uses the chosen font with a monospace fallback chain.
     /// </summary>
     public FontFamily EditorFontFamily =>
         new($"{FontFamilyName}, {AppSettings.FallbackFontFamily}");
 
     /// <summary>
+    /// FontWeight for binding to the editor.
+    /// </summary>
+    public FontWeight EditorFontWeight => ParseFontWeight(FontWeightName);
+
+    /// <summary>
     /// Font size in Avalonia device-independent pixels (96 dpi).
     /// </summary>
     public double FontSizePx => FontSizePt * 96.0 / 72.0;
+
+    /// <summary>
+    /// Available font weight names for the Font dialog.
+    /// </summary>
+    public static string[] AvailableFontWeights { get; } = new[]
+    {
+        "Thin", "ExtraLight", "Light", "Regular", "Medium",
+        "SemiBold", "Bold", "ExtraBold", "Black"
+    };
+
+    internal static FontWeight ParseFontWeight(string name) => name switch
+    {
+        "Thin" => FontWeight.Thin,
+        "ExtraLight" => FontWeight.ExtraLight,
+        "Light" => FontWeight.Light,
+        "Medium" => FontWeight.Medium,
+        "SemiBold" => FontWeight.SemiBold,
+        "Bold" => FontWeight.Bold,
+        "ExtraBold" => FontWeight.ExtraBold,
+        "Black" => FontWeight.Black,
+        _ => FontWeight.Regular,
+    };
 
     public string WindowTitle
     {
@@ -107,6 +142,12 @@ public partial class MainWindowViewModel : ViewModelBase
     public Func<Task>? SettingsDialog { get; set; }
 
     /// <summary>
+    /// Callback to suppress/resume file watcher during our own saves.
+    /// Pass true to suppress, false to resume.
+    /// </summary>
+    public Action<bool>? SuppressFileWatcher { get; set; }
+
+    /// <summary>
     /// File path passed via command-line argument (e.g. double-click from shell).
     /// </summary>
     public string? StartupFilePath { get; set; }
@@ -136,10 +177,12 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         var settings = SettingsService.Load();
         FontFamilyName = settings.FontFamilyName;
+        FontWeightName = settings.FontWeightName;
         FontSizePt = settings.FontSizePt;
         ShowEditor = settings.ShowEditor;
         ShowPreview = settings.ShowPreview;
         WordWrap = settings.WordWrap;
+        ShowLineNumbers = settings.ShowLineNumbers;
         ThemeMode = settings.ThemeMode;
         DeclinedFileAssociation = settings.DeclinedFileAssociation;
 
@@ -183,12 +226,14 @@ public partial class MainWindowViewModel : ViewModelBase
         SettingsService.Save(new AppSettings
         {
             FontFamilyName = FontFamilyName,
+            FontWeightName = FontWeightName,
             FontSizePt = FontSizePt,
             LastOpenFilePath = CurrentFilePath,
             RecentFiles = RecentFiles.ToList(),
             ShowEditor = ShowEditor,
             ShowPreview = ShowPreview,
             WordWrap = WordWrap,
+            ShowLineNumbers = ShowLineNumbers,
             ThemeMode = ThemeMode,
             DeclinedFileAssociation = DeclinedFileAssociation,
             WindowX = WindowX,
@@ -347,6 +392,25 @@ public partial class MainWindowViewModel : ViewModelBase
         StatusText = $"Opened: {Path.GetFileName(path)}";
     }
 
+    [RelayCommand(CanExecute = nameof(HasFile))]
+    private async Task ReloadFile()
+    {
+        if (CurrentFilePath == null) return;
+
+        if (IsModified)
+        {
+            if (!await HandleUnsavedChangesAsync()) return;
+        }
+
+        var content = await SafeReadFileAsync(CurrentFilePath);
+        if (content != null)
+        {
+            MarkdownText = content;
+            IsModified = false;
+            StatusText = $"Reloaded: {Path.GetFileName(CurrentFilePath)}";
+        }
+    }
+
     [RelayCommand]
     private async Task SaveFile()
     {
@@ -358,13 +422,16 @@ public partial class MainWindowViewModel : ViewModelBase
 
         try
         {
+            SuppressFileWatcher?.Invoke(true);
             await File.WriteAllTextAsync(CurrentFilePath, MarkdownText);
+            SuppressFileWatcher?.Invoke(false);
             IsModified = false;
             AddToRecentFiles(CurrentFilePath);
             StatusText = $"Saved: {Path.GetFileName(CurrentFilePath)}";
         }
         catch (Exception ex)
         {
+            SuppressFileWatcher?.Invoke(false);
             AppLogger.Error("Failed to save file", ex);
             if (ShowMessageDialog != null)
                 await ShowMessageDialog("Error", "An error occurred while saving the file.");
@@ -381,7 +448,9 @@ public partial class MainWindowViewModel : ViewModelBase
 
         try
         {
+            SuppressFileWatcher?.Invoke(true);
             await File.WriteAllTextAsync(path, MarkdownText);
+            SuppressFileWatcher?.Invoke(false);
             CurrentFilePath = path;
             IsModified = false;
             AddToRecentFiles(path);
@@ -389,6 +458,7 @@ public partial class MainWindowViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
+            SuppressFileWatcher?.Invoke(false);
             AppLogger.Error("Failed to save file as", ex);
             if (ShowMessageDialog != null)
                 await ShowMessageDialog("Error", "An error occurred while saving the file.");
@@ -417,6 +487,32 @@ public partial class MainWindowViewModel : ViewModelBase
             AppLogger.Error("Failed to export HTML", ex);
             if (ShowMessageDialog != null)
                 await ShowMessageDialog("Error", "An error occurred while exporting HTML.");
+        }
+    }
+
+    [RelayCommand]
+    private async Task ExportText()
+    {
+        if (SaveFileDialog == null) return;
+
+        var suggestedName = CurrentFilePath != null
+            ? Path.ChangeExtension(CurrentFilePath, ".txt")
+            : null;
+        var path = await SaveFileDialog(suggestedName);
+        if (path == null) return;
+
+        try
+        {
+            var textService = new MarkdownToTextService(_markdownService.Pipeline);
+            var text = textService.Convert(MarkdownText);
+            await File.WriteAllTextAsync(path, text);
+            StatusText = $"Exported text: {Path.GetFileName(path)}";
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Error("Failed to export text", ex);
+            if (ShowMessageDialog != null)
+                await ShowMessageDialog("Error", "An error occurred while exporting text.");
         }
     }
 
@@ -496,6 +592,13 @@ public partial class MainWindowViewModel : ViewModelBase
     private void ToggleWordWrap()
     {
         WordWrap = !WordWrap;
+        SaveSettings();
+    }
+
+    [RelayCommand]
+    private void ToggleLineNumbers()
+    {
+        ShowLineNumbers = !ShowLineNumbers;
         SaveSettings();
     }
 

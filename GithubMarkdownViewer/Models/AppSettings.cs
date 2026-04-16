@@ -20,6 +20,9 @@ public class AppSettings
     [JsonPropertyName("fontFamily")]
     public string FontFamilyName { get; set; } = DefaultFontFamily;
 
+    [JsonPropertyName("fontWeightName")]
+    public string FontWeightName { get; set; } = "Regular";
+
     [JsonPropertyName("fontSizePt")]
     public double FontSizePt { get; set; } = DefaultFontSizePt;
 
@@ -37,6 +40,9 @@ public class AppSettings
 
     [JsonPropertyName("wordWrap")]
     public bool WordWrap { get; set; } = true;
+
+    [JsonPropertyName("showLineNumbers")]
+    public bool ShowLineNumbers { get; set; } = true;
 
     [JsonPropertyName("themeMode")]
     public string ThemeMode { get; set; } = "System";

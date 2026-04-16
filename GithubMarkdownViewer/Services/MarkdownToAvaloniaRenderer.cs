@@ -72,6 +72,7 @@ public class MarkdownToAvaloniaRenderer
     private FontFamily _bodyFont = new("Inter, Segoe UI, sans-serif");
     private FontFamily _monoFont = new("Cascadia Code, Consolas, Menlo, monospace");
     private double _baseFontSize = 13.33; // 10pt in px
+    private FontWeight _baseFontWeight = FontWeight.Regular;
     private TextWrapping _bodyTextWrapping = TextWrapping.Wrap;
 
     public MarkdownToAvaloniaRenderer(MarkdownPipeline pipeline)
@@ -88,11 +89,12 @@ public class MarkdownToAvaloniaRenderer
     /// <summary>
     /// Updates font settings used by subsequent Render calls.
     /// </summary>
-    public void SetFont(string fontFamilyName, double baseFontSizePx)
+    public void SetFont(string fontFamilyName, double baseFontSizePx, FontWeight baseFontWeight = default)
     {
         _bodyFont = new FontFamily($"{fontFamilyName}, Inter, Segoe UI, Noto Sans, Helvetica, Arial, sans-serif");
         _monoFont = new FontFamily($"{fontFamilyName}, Cascadia Code, Consolas, Menlo, Monaco, Courier New, monospace");
         _baseFontSize = baseFontSizePx;
+        _baseFontWeight = baseFontWeight == default ? FontWeight.Regular : baseFontWeight;
     }
 
     /// <summary>
@@ -258,6 +260,7 @@ public class MarkdownToAvaloniaRenderer
         {
             FontSize = _baseFontSize,
             FontFamily = _bodyFont,
+            FontWeight = _baseFontWeight,
             Foreground = _defaultForeground,
             TextWrapping = _bodyTextWrapping,
             Margin = new Thickness(0, 0, 0, 12),
@@ -347,6 +350,7 @@ public class MarkdownToAvaloniaRenderer
                     Text = bullet,
                     FontSize = _baseFontSize,
                     FontFamily = _bodyFont,
+                    FontWeight = _baseFontWeight,
                     Foreground = _defaultForeground,
                     MinWidth = list.IsOrdered ? 24 : 16,
                     TextAlignment = TextAlignment.Right,
@@ -601,6 +605,7 @@ public class MarkdownToAvaloniaRenderer
         {
             Text = displayText,
             Foreground = _linkForeground,
+            FontWeight = _baseFontWeight,
             TextDecorations = TextDecorations.Underline,
             Cursor = new Cursor(StandardCursorType.Hand),
             FontFamily = _bodyFont,
