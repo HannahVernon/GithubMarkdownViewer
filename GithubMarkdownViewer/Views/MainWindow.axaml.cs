@@ -9,11 +9,14 @@ using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Documents;
 using Avalonia.Controls.Primitives;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using AvaloniaEdit;
+using AvaloniaEdit.Document;
 using GithubMarkdownViewer.Services;
 using GithubMarkdownViewer.Models;
 using GithubMarkdownViewer.ViewModels;
@@ -27,12 +30,24 @@ public partial class MainWindow : Window
     private bool _previewDirty;
     private ScrollViewer? _editorScrollViewer;
     private bool _isSyncingScroll;
+    private bool _suppressTextChanged;
 
     // Navigation history for .md link traversal
     private readonly Stack<string> _backStack = new();
     private readonly Stack<string> _forwardStack = new();
     private Button? _backButton;
     private Button? _forwardButton;
+
+    // Find-in-editor state
+    private int _findMatchCount;
+    private int _currentFindIndex = -1;
+    private readonly List<int> _findMatchPositions = new();
+    private FindHighlightRenderer? _findHighlightRenderer;
+
+    // File watcher state
+    private FileSystemWatcher? _fileWatcher;
+    private bool _isSelfSaving;
+    private bool _reloadPromptPending;
 
     public MainWindow()
     {
@@ -67,8 +82,12 @@ public partial class MainWindow : Window
     {
         vm.PropertyChanged -= OnViewModelPropertyChanged;
 
+        StopFileWatcher();
+
         if (_renderer != null)
             _renderer.LinkClicked -= OnRendererLinkClicked;
+
+        Editor.TextChanged -= OnEditorTextChanged;
 
         if (_editorScrollViewer != null)
             _editorScrollViewer.PropertyChanged -= OnEditorScrollPropertyChanged;
@@ -338,6 +357,7 @@ public partial class MainWindow : Window
                 vm.ExitApplication = () => Close();
                 vm.FontPickerDialog = ShowFontPickerAsync;
                 vm.SettingsDialog = ShowSettingsDialogAsync;
+                vm.SuppressFileWatcher = suppress => _isSelfSaving = suppress;
                 vm.PropertyChanged += OnViewModelPropertyChanged;
 
                 // Load persisted settings before rendering
@@ -358,9 +378,16 @@ public partial class MainWindow : Window
 
                 // Set up scroll sync — try immediately since template may already
                 // be applied, and also subscribe as fallback for future applies.
-                EditorTextBox.TemplateApplied += OnEditorTemplateApplied;
+                Editor.TemplateApplied += OnEditorTemplateApplied;
                 // Deferred attempt: the visual tree is ready after the current layout pass
                 Dispatcher.UIThread.Post(() => TryInitScrollSync(), DispatcherPriority.Loaded);
+
+                // Wire up AvaloniaEdit text-changed to sync with ViewModel
+                Editor.TextChanged += OnEditorTextChanged;
+
+                // Install the find highlight renderer
+                _findHighlightRenderer = new FindHighlightRenderer();
+                Editor.TextArea.TextView.BackgroundRenderers.Add(_findHighlightRenderer);
 
                 // Wire up recent files menu
                 vm.RecentFiles.CollectionChanged += OnRecentFilesChanged;
@@ -368,6 +395,25 @@ public partial class MainWindow : Window
 
                 // Wire up About menu
                 AboutMenuItem.Click += async (_, _) => await ShowAboutDialogAsync();
+
+                // Wire up View > Theme submenu
+                ThemeSystemMenuItem.Click += (_, _) => { vm.ThemeMode = "System"; vm.SaveSettings(); };
+                ThemeLightMenuItem.Click += (_, _) => { vm.ThemeMode = "Light"; vm.SaveSettings(); };
+                ThemeDarkMenuItem.Click += (_, _) => { vm.ThemeMode = "Dark"; vm.SaveSettings(); };
+
+                // Set initial checkmarks on View menu items
+                UpdateViewMenuCheckmarks(vm);
+
+                // Wire up Edit > Find/Replace menu and find bar controls
+                FindMenuItem.Click += (_, _) => ShowFindBar(showReplace: false);
+                ReplaceMenuItem.Click += (_, _) => ShowFindBar(showReplace: true);
+                FindCloseButton.Click += (_, _) => HideFindBar();
+                FindNextButton.Click += (_, _) => FindNext();
+                FindPrevButton.Click += (_, _) => FindPrevious();
+                FindTextBox.TextChanged += (_, _) => PerformFind();
+                FindTextBox.KeyDown += OnFindTextBoxKeyDown;
+                ReplaceOneButton.Click += (_, _) => ReplaceOne();
+                ReplaceAllButton.Click += (_, _) => ReplaceAll();
 
                 // Wire up navigation buttons
                 _backButton = this.FindControl<Button>("NavBackButton");
@@ -385,7 +431,10 @@ public partial class MainWindow : Window
                 // Try to reopen last document; fall back to sample content
                 _ = InitContentAsync(vm);
 
-                _renderer.SetFont(vm.FontFamilyName, vm.FontSizePx);
+                _renderer.SetFont(vm.FontFamilyName, vm.FontSizePx, vm.EditorFontWeight);
+                Editor.FontWeight = vm.EditorFontWeight;
+                Editor.TextArea.TextView.SetValue(TextElement.FontWeightProperty, vm.EditorFontWeight);
+                Editor.TextArea.TextView.Redraw();
                 _renderer.SetWordWrap(vm.WordWrap);
                 ApplyWordWrapScrollBehavior(vm.WordWrap);
                 ApplyTheme(vm.ThemeMode);
@@ -411,7 +460,7 @@ public partial class MainWindow : Window
     {
         if (_editorScrollViewer != null) return; // already initialized
 
-        _editorScrollViewer = EditorTextBox
+        _editorScrollViewer = Editor
             .GetVisualDescendants()
             .OfType<ScrollViewer>()
             .FirstOrDefault();
@@ -502,6 +551,14 @@ public partial class MainWindow : Window
             if (e.PropertyName is nameof(MainWindowViewModel.PreviewMarkdown)
                                or nameof(MainWindowViewModel.MarkdownText))
             {
+                // Sync ViewModel → Editor when text changes programmatically (file load, reload)
+                if (!_suppressTextChanged && Editor.Text != vm.MarkdownText)
+                {
+                    _suppressTextChanged = true;
+                    Editor.Text = vm.MarkdownText;
+                    _suppressTextChanged = false;
+                }
+
                 // Debounce: restart timer on each keystroke
                 _previewDirty = true;
                 _previewTimer?.Stop();
@@ -510,9 +567,18 @@ public partial class MainWindow : Window
 
             // Font changes: update renderer and force re-render
             if (e.PropertyName is nameof(MainWindowViewModel.FontFamilyName)
-                               or nameof(MainWindowViewModel.FontSizePt))
+                               or nameof(MainWindowViewModel.FontSizePt)
+                               or nameof(MainWindowViewModel.FontWeightName)
+                               or nameof(MainWindowViewModel.EditorFontWeight))
             {
-                _renderer?.SetFont(vm.FontFamilyName, vm.FontSizePx);
+                _renderer?.SetFont(vm.FontFamilyName, vm.FontSizePx, vm.EditorFontWeight);
+                // AvaloniaEdit doesn't propagate FontWeight to its internal TextView,
+                // so we must push it to both the outer control and the inner rendering surface.
+                // After setting the property, we must force a full redraw because AvaloniaEdit
+                // caches the Typeface (which embeds FontWeight) in GlobalTextRunProperties.
+                Editor.FontWeight = vm.EditorFontWeight;
+                Editor.TextArea.TextView.SetValue(TextElement.FontWeightProperty, vm.EditorFontWeight);
+                Editor.TextArea.TextView.Redraw();
                 UpdatePreview(vm.MarkdownText);
             }
 
@@ -522,6 +588,14 @@ public partial class MainWindow : Window
                 _renderer?.SetWordWrap(vm.WordWrap);
                 ApplyWordWrapScrollBehavior(vm.WordWrap);
                 UpdatePreview(vm.MarkdownText);
+                UpdateViewMenuCheckmarks(vm);
+            }
+
+            // Line numbers toggle
+            if (e.PropertyName is nameof(MainWindowViewModel.ShowLineNumbers))
+            {
+                Editor.ShowLineNumbers = vm.ShowLineNumbers;
+                UpdateViewMenuCheckmarks(vm);
             }
 
             // Theme change: apply theme variant and re-render
@@ -529,12 +603,42 @@ public partial class MainWindow : Window
             {
                 ApplyTheme(vm.ThemeMode);
                 UpdatePreview(vm.MarkdownText);
+                UpdateViewMenuCheckmarks(vm);
+            }
+
+            // File path changed: restart file watcher
+            if (e.PropertyName is nameof(MainWindowViewModel.CurrentFilePath))
+            {
+                StartFileWatcher(vm.CurrentFilePath);
             }
         }
         catch (Exception ex)
         {
             AppLogger.Error("Error in property change handler", ex);
         }
+    }
+
+    private void UpdateViewMenuCheckmarks(MainWindowViewModel vm)
+    {
+        WordWrapMenuItem.Icon = vm.WordWrap ? CreateCheckIcon() : null;
+        LineNumbersMenuItem.Icon = vm.ShowLineNumbers ? CreateCheckIcon() : null;
+
+        ThemeSystemMenuItem.Icon = vm.ThemeMode == "System" ? CreateCheckIcon() : null;
+        ThemeLightMenuItem.Icon = vm.ThemeMode == "Light" ? CreateCheckIcon() : null;
+        ThemeDarkMenuItem.Icon = vm.ThemeMode == "Dark" ? CreateCheckIcon() : null;
+    }
+
+    private static object CreateCheckIcon()
+    {
+        return new Avalonia.Controls.Shapes.Path
+        {
+            Data = Avalonia.Media.StreamGeometry.Parse("M1,4.5 L3.5,7 L7,1"),
+            Stroke = Brushes.Gray,
+            StrokeThickness = 1.5,
+            Width = 10,
+            Height = 10,
+            Stretch = Stretch.Uniform,
+        };
     }
 
     private void UpdatePreview(string markdown)
@@ -827,6 +931,42 @@ public partial class MainWindow : Window
 
     private void OnNavigationKeyDown(object? sender, Avalonia.Input.KeyEventArgs e)
     {
+        // Ctrl+F: open find bar (find only)
+        if (e.Key == Avalonia.Input.Key.F && e.KeyModifiers == Avalonia.Input.KeyModifiers.Control)
+        {
+            e.Handled = true;
+            ShowFindBar(showReplace: false);
+            return;
+        }
+
+        // Ctrl+H: open find bar with replace
+        if (e.Key == Avalonia.Input.Key.H && e.KeyModifiers == Avalonia.Input.KeyModifiers.Control)
+        {
+            e.Handled = true;
+            ShowFindBar(showReplace: true);
+            return;
+        }
+
+        // Escape: close find bar
+        if (e.Key == Avalonia.Input.Key.Escape && FindBar.IsVisible)
+        {
+            e.Handled = true;
+            HideFindBar();
+            return;
+        }
+
+        // F3 / Shift+F3: next/previous match
+        if (e.Key == Avalonia.Input.Key.F3 && FindBar.IsVisible)
+        {
+            e.Handled = true;
+            if (e.KeyModifiers.HasFlag(Avalonia.Input.KeyModifiers.Shift))
+                FindPrevious();
+            else
+                FindNext();
+            return;
+        }
+
+        // Alt+Left / Alt+Right for navigation
         if (e.KeyModifiers != Avalonia.Input.KeyModifiers.Alt) return;
 
         if (e.Key == Avalonia.Input.Key.Left && _backStack.Count > 0)
@@ -853,6 +993,320 @@ public partial class MainWindow : Window
         {
             e.Handled = true;
             _ = NavigateForwardAsync();
+        }
+    }
+
+    // ── AvaloniaEdit text sync ─────────────────────────────────────
+
+    private void OnEditorTextChanged(object? sender, EventArgs e)
+    {
+        if (_suppressTextChanged) return;
+        if (DataContext is MainWindowViewModel vm)
+        {
+            _suppressTextChanged = true;
+            vm.MarkdownText = Editor.Text;
+            _suppressTextChanged = false;
+        }
+    }
+
+    // ── Find and Replace in editor ─────────────────────────────────
+
+    private void ShowFindBar(bool showReplace)
+    {
+        FindBar.IsVisible = true;
+        ReplaceRow.IsVisible = showReplace;
+        FindTextBox.Focus();
+        FindTextBox.SelectAll();
+
+        // Seed the find box with the current editor selection
+        if (!string.IsNullOrEmpty(Editor.SelectedText))
+            FindTextBox.Text = Editor.SelectedText;
+    }
+
+    private void HideFindBar()
+    {
+        FindBar.IsVisible = false;
+        _findMatchPositions.Clear();
+        _findMatchCount = 0;
+        _currentFindIndex = -1;
+        FindStatusText.Text = "";
+
+        // Clear find highlights
+        _findHighlightRenderer?.ClearMatches();
+        Editor.TextArea.TextView.InvalidateLayer(AvaloniaEdit.Rendering.KnownLayer.Selection);
+
+        Editor.Focus();
+    }
+
+    private void OnFindTextBoxKeyDown(object? sender, Avalonia.Input.KeyEventArgs e)
+    {
+        if (e.Key == Avalonia.Input.Key.Enter)
+        {
+            e.Handled = true;
+            if (e.KeyModifiers.HasFlag(Avalonia.Input.KeyModifiers.Shift))
+                FindPrevious();
+            else
+                FindNext();
+        }
+        else if (e.Key == Avalonia.Input.Key.Escape)
+        {
+            e.Handled = true;
+            HideFindBar();
+        }
+    }
+
+    private void PerformFind()
+    {
+        _findMatchPositions.Clear();
+        _findMatchCount = 0;
+        _currentFindIndex = -1;
+
+        var searchText = FindTextBox.Text;
+        var text = Editor.Text ?? string.Empty;
+
+        if (string.IsNullOrEmpty(searchText) || string.IsNullOrEmpty(text))
+        {
+            FindStatusText.Text = "";
+            _findHighlightRenderer?.ClearMatches();
+            Editor.TextArea.TextView.InvalidateLayer(AvaloniaEdit.Rendering.KnownLayer.Selection);
+            return;
+        }
+
+        var pos = 0;
+        while (pos < text.Length)
+        {
+            var idx = text.IndexOf(searchText, pos, StringComparison.OrdinalIgnoreCase);
+            if (idx < 0) break;
+            _findMatchPositions.Add(idx);
+            pos = idx + searchText.Length;
+        }
+        _findMatchCount = _findMatchPositions.Count;
+
+        if (_findMatchCount > 0)
+        {
+            // Pick the first match at or after the current caret position
+            var caret = Editor.CaretOffset;
+            _currentFindIndex = 0;
+            for (int i = 0; i < _findMatchPositions.Count; i++)
+            {
+                if (_findMatchPositions[i] >= caret)
+                {
+                    _currentFindIndex = i;
+                    break;
+                }
+            }
+            FindStatusText.Text = $"{_currentFindIndex + 1} of {_findMatchCount}";
+        }
+        else
+        {
+            FindStatusText.Text = "No matches";
+        }
+
+        UpdateFindHighlights(searchText.Length);
+    }
+
+    private void FindNext()
+    {
+        if (_findMatchCount == 0) return;
+        _currentFindIndex = (_currentFindIndex + 1) % _findMatchCount;
+        SelectCurrentMatch(FindTextBox.Text?.Length ?? 0);
+    }
+
+    private void FindPrevious()
+    {
+        if (_findMatchCount == 0) return;
+        _currentFindIndex = (_currentFindIndex - 1 + _findMatchCount) % _findMatchCount;
+        SelectCurrentMatch(FindTextBox.Text?.Length ?? 0);
+    }
+
+    private void SelectCurrentMatch(int length)
+    {
+        if (_currentFindIndex < 0 || _currentFindIndex >= _findMatchPositions.Count) return;
+
+        var pos = _findMatchPositions[_currentFindIndex];
+
+        // Update highlight renderer to show current match
+        UpdateFindHighlights(length);
+
+        // Move caret and select the match so it scrolls into view
+        Editor.Select(pos, length);
+        Editor.CaretOffset = pos + length;
+        Editor.TextArea.Caret.BringCaretToView();
+        FindStatusText.Text = $"{_currentFindIndex + 1} of {_findMatchCount}";
+    }
+
+    private void UpdateFindHighlights(int matchLength)
+    {
+        if (_findHighlightRenderer == null) return;
+
+        var segments = new List<TextSegment>();
+        foreach (var matchPos in _findMatchPositions)
+        {
+            segments.Add(new TextSegment
+            {
+                StartOffset = matchPos,
+                Length = matchLength
+            });
+        }
+        _findHighlightRenderer.SetMatches(segments);
+        _findHighlightRenderer.CurrentMatchIndex = _currentFindIndex;
+        Editor.TextArea.TextView.InvalidateLayer(AvaloniaEdit.Rendering.KnownLayer.Selection);
+    }
+
+    private void ReplaceOne()
+    {
+        var searchText = FindTextBox.Text;
+        var replaceText = ReplaceTextBox.Text ?? string.Empty;
+        if (string.IsNullOrEmpty(searchText) || _findMatchCount == 0) return;
+
+        // If the current selection matches the search text, replace it
+        var selected = Editor.SelectedText;
+        if (string.Equals(selected, searchText, StringComparison.OrdinalIgnoreCase))
+        {
+            var pos = Editor.SelectionStart;
+            Editor.Document.Replace(pos, searchText.Length, replaceText);
+
+            // Re-index matches after replacement
+            PerformFind();
+
+            if (DataContext is MainWindowViewModel vm)
+                vm.StatusText = "Replaced 1 occurrence";
+        }
+        else
+        {
+            // No active match selected — just find next
+            FindNext();
+        }
+    }
+
+    private void ReplaceAll()
+    {
+        var searchText = FindTextBox.Text;
+        var replaceText = ReplaceTextBox.Text ?? string.Empty;
+        if (string.IsNullOrEmpty(searchText)) return;
+
+        var text = Editor.Text ?? string.Empty;
+        var count = 0;
+        var result = new System.Text.StringBuilder(text.Length);
+        var pos = 0;
+
+        while (pos < text.Length)
+        {
+            var idx = text.IndexOf(searchText, pos, StringComparison.OrdinalIgnoreCase);
+            if (idx < 0)
+            {
+                result.Append(text, pos, text.Length - pos);
+                break;
+            }
+            result.Append(text, pos, idx - pos);
+            result.Append(replaceText);
+            pos = idx + searchText.Length;
+            count++;
+        }
+
+        if (count > 0)
+        {
+            Editor.Text = result.ToString();
+            PerformFind();
+
+            if (DataContext is MainWindowViewModel vm)
+                vm.StatusText = $"Replaced {count} occurrence{(count == 1 ? "" : "s")}";
+        }
+        else
+        {
+            FindStatusText.Text = "No matches";
+        }
+    }
+
+    // ── File watcher ────────────────────────────────────────────────
+
+    private void StartFileWatcher(string? filePath)
+    {
+        StopFileWatcher();
+
+        if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath))
+            return;
+
+        try
+        {
+            var directory = Path.GetDirectoryName(filePath);
+            var fileName = Path.GetFileName(filePath);
+            if (directory == null || fileName == null) return;
+
+            _fileWatcher = new FileSystemWatcher(directory, fileName)
+            {
+                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size,
+                EnableRaisingEvents = true,
+            };
+
+            _fileWatcher.Changed += OnWatchedFileChanged;
+            AppLogger.Info($"File watcher started for: {fileName}");
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Error("Failed to start file watcher", ex);
+        }
+    }
+
+    private void StopFileWatcher()
+    {
+        if (_fileWatcher == null) return;
+
+        _fileWatcher.Changed -= OnWatchedFileChanged;
+        _fileWatcher.EnableRaisingEvents = false;
+        _fileWatcher.Dispose();
+        _fileWatcher = null;
+        _reloadPromptPending = false;
+    }
+
+    private void OnWatchedFileChanged(object sender, FileSystemEventArgs e)
+    {
+        // Ignore changes triggered by our own save operations
+        if (_isSelfSaving) return;
+
+        // FileSystemWatcher fires on a thread-pool thread and may fire
+        // multiple times for a single save. Use a flag to debounce and
+        // marshal to the UI thread.
+        if (_reloadPromptPending) return;
+        _reloadPromptPending = true;
+
+        Dispatcher.UIThread.Post(() => _ = PromptReloadFileAsync(), DispatcherPriority.Background);
+    }
+
+    private async Task PromptReloadFileAsync()
+    {
+        try
+        {
+            if (DataContext is not MainWindowViewModel vm) return;
+            if (string.IsNullOrEmpty(vm.CurrentFilePath)) return;
+
+            var fileName = Path.GetFileName(vm.CurrentFilePath);
+            var reload = await ConfirmAsync(
+                $"The file \"{fileName}\" has been modified by another program.\n\nDo you want to reload it?");
+
+            if (reload)
+            {
+                if (!File.Exists(vm.CurrentFilePath))
+                {
+                    await ShowMessageAsync("File Not Found",
+                        $"The file no longer exists:\n{fileName}");
+                    return;
+                }
+
+                var content = await File.ReadAllTextAsync(vm.CurrentFilePath);
+                vm.MarkdownText = content;
+                vm.IsModified = false;
+                vm.StatusText = $"Reloaded: {fileName}";
+                UpdatePreview(content);
+            }
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Error("Failed to reload file", ex);
+        }
+        finally
+        {
+            _reloadPromptPending = false;
         }
     }
 
@@ -884,6 +1338,9 @@ public partial class MainWindow : Window
 
     private void ApplyWordWrapScrollBehavior(bool wordWrap)
     {
+        // AvaloniaEdit uses its own WordWrap property
+        Editor.WordWrap = wordWrap;
+
         // When wrapping, disable horizontal scroll so text has a width constraint to wrap against
         PreviewScrollViewer.HorizontalScrollBarVisibility =
             wordWrap ? Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled
@@ -908,44 +1365,17 @@ public partial class MainWindow : Window
 
         var dialog = new Window
         {
-            Title = "Settings",
-            Width = 500,
-            Height = 520,
+            Title = "Font",
+            Width = 460,
+            Height = 420,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             CanResize = false,
         };
 
-        // ── Theme selector ──────────────────────────────────────────
-        var themeLabel = new TextBlock
-        {
-            Text = "Theme",
-            FontWeight = Avalonia.Media.FontWeight.SemiBold,
-            FontSize = 14,
-            Margin = new Thickness(0, 0, 0, 6),
-        };
-
-        var themeOptions = new[] { "System", "Light", "Dark" };
-        var themeCombo = new ComboBox
-        {
-            ItemsSource = themeOptions,
-            SelectedItem = themeOptions.Contains(vm.ThemeMode) ? vm.ThemeMode : "System",
-            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
-            Margin = new Thickness(0, 0, 0, 16),
-        };
-
-        // ── Word Wrap ───────────────────────────────────────────────
-        var wordWrapCheck = new CheckBox
-        {
-            Content = "Word Wrap",
-            IsChecked = vm.WordWrap,
-            FontSize = 14,
-            Margin = new Thickness(0, 0, 0, 16),
-        };
-
-        // ── Font section ────────────────────────────────────────────
+        // ── Font family ─────────────────────────────────────────────
         var fontLabel = new TextBlock
         {
-            Text = "Font",
+            Text = "Font Family",
             FontWeight = Avalonia.Media.FontWeight.SemiBold,
             FontSize = 14,
             Margin = new Thickness(0, 0, 0, 6),
@@ -960,7 +1390,7 @@ public partial class MainWindow : Window
         {
             ItemsSource = systemFonts,
             SelectedItem = systemFonts.Contains(vm.FontFamilyName) ? vm.FontFamilyName : systemFonts.FirstOrDefault(),
-            Height = 180,
+            Height = 200,
             Margin = new Thickness(0, 0, 0, 8),
         };
 
@@ -981,6 +1411,21 @@ public partial class MainWindow : Window
             Width = 100,
         };
 
+        var weightLabel = new TextBlock
+        {
+            Text = "Weight:",
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            Margin = new Thickness(16, 0, 8, 0),
+        };
+
+        var weightCombo = new ComboBox
+        {
+            ItemsSource = MainWindowViewModel.AvailableFontWeights,
+            SelectedItem = MainWindowViewModel.AvailableFontWeights.Contains(vm.FontWeightName)
+                ? vm.FontWeightName : "Regular",
+            Width = 120,
+        };
+
         var fontPreview = new TextBlock
         {
             Text = "The quick brown fox jumps over the lazy dog",
@@ -992,9 +1437,7 @@ public partial class MainWindow : Window
         fontList.SelectionChanged += (_, _) =>
         {
             if (fontList.SelectedItem is string selectedFont)
-            {
                 fontPreview.FontFamily = new FontFamily($"{selectedFont}, {Models.AppSettings.FallbackFontFamily}");
-            }
         };
 
         sizeUpDown.ValueChanged += (_, _) =>
@@ -1003,10 +1446,17 @@ public partial class MainWindow : Window
                 fontPreview.FontSize = (double)sizeUpDown.Value.Value * 96.0 / 72.0;
         };
 
+        weightCombo.SelectionChanged += (_, _) =>
+        {
+            if (weightCombo.SelectedItem is string selectedWeight)
+                fontPreview.FontWeight = MainWindowViewModel.ParseFontWeight(selectedWeight);
+        };
+
         // Set initial preview
         if (fontList.SelectedItem is string initialFont)
             fontPreview.FontFamily = new FontFamily($"{initialFont}, {Models.AppSettings.FallbackFontFamily}");
         fontPreview.FontSize = vm.FontSizePx;
+        fontPreview.FontWeight = vm.EditorFontWeight;
 
         // Scroll to currently selected font
         if (fontList.SelectedItem != null)
@@ -1019,10 +1469,10 @@ public partial class MainWindow : Window
             }, DispatcherPriority.Loaded);
         }
 
-        var sizePanel = new StackPanel
+        var sizeWeightPanel = new StackPanel
         {
             Orientation = Avalonia.Layout.Orientation.Horizontal,
-            Children = { sizeLabel, sizeUpDown },
+            Children = { sizeLabel, sizeUpDown, weightLabel, weightCombo },
         };
 
         // ── Buttons ─────────────────────────────────────────────────
@@ -1031,6 +1481,13 @@ public partial class MainWindow : Window
             Content = "OK",
             Width = 80,
             IsDefault = true,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+        };
+
+        var applyButton = new Button
+        {
+            Content = "Apply",
+            Width = 80,
             HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
         };
 
@@ -1050,10 +1507,23 @@ public partial class MainWindow : Window
             Margin = new Thickness(0, 16, 0, 0),
         };
         buttonPanel.Children.Add(okButton);
+        buttonPanel.Children.Add(applyButton);
         buttonPanel.Children.Add(cancelButton);
 
+        // Helper to apply current dialog selections to the editor
+        void ApplyFontSettings()
+        {
+            if (fontList.SelectedItem is string chosenFont)
+                vm.FontFamilyName = chosenFont;
+            if (sizeUpDown.Value.HasValue)
+                vm.FontSizePt = (double)sizeUpDown.Value.Value;
+            vm.FontWeightName = weightCombo.SelectedItem as string ?? "Regular";
+            vm.SaveSettings();
+        }
+
         bool accepted = false;
-        okButton.Click += (_, _) => { accepted = true; dialog.Close(); };
+        okButton.Click += (_, _) => { accepted = true; ApplyFontSettings(); dialog.Close(); };
+        applyButton.Click += (_, _) => ApplyFontSettings();
         cancelButton.Click += (_, _) => dialog.Close();
 
         // ── Layout ──────────────────────────────────────────────────
@@ -1063,45 +1533,37 @@ public partial class MainWindow : Window
             Spacing = 0,
             Children =
             {
-                themeLabel,
-                themeCombo,
-                wordWrapCheck,
                 fontLabel,
                 fontList,
-                sizePanel,
+                sizeWeightPanel,
                 fontPreview,
                 buttonPanel,
             },
         };
 
         dialog.Content = content;
+
+        // Save original values so Cancel can restore if Apply was used
+        var origFont = vm.FontFamilyName;
+        var origSize = vm.FontSizePt;
+        var origWeight = vm.FontWeightName;
+
         await dialog.ShowDialog(this);
 
-        if (!accepted) return;
+        if (!accepted)
+        {
+            // Restore original settings if Apply changed them before Cancel
+            if (vm.FontFamilyName != origFont || vm.FontSizePt != origSize || vm.FontWeightName != origWeight)
+            {
+                vm.FontFamilyName = origFont;
+                vm.FontSizePt = origSize;
+                vm.FontWeightName = origWeight;
+                vm.SaveSettings();
+            }
+            return;
+        }
 
-        // Apply changes
-        var themeChanged = (themeCombo.SelectedItem as string ?? "System") != vm.ThemeMode;
-        var fontChanged = (fontList.SelectedItem as string) != vm.FontFamilyName;
-        var sizeChanged = sizeUpDown.Value.HasValue && (double)sizeUpDown.Value.Value != vm.FontSizePt;
-        var wrapChanged = wordWrapCheck.IsChecked != vm.WordWrap;
-
-        vm.ThemeMode = themeCombo.SelectedItem as string ?? "System";
-        vm.WordWrap = wordWrapCheck.IsChecked ?? true;
-
-        if (fontList.SelectedItem is string chosenFont)
-            vm.FontFamilyName = chosenFont;
-        if (sizeUpDown.Value.HasValue)
-            vm.FontSizePt = (double)sizeUpDown.Value.Value;
-
-        vm.SaveSettings();
-
-        var changes = new List<string>();
-        if (themeChanged) changes.Add($"Theme: {vm.ThemeMode}");
-        if (fontChanged || sizeChanged) changes.Add($"Font: {vm.FontFamilyName}, {vm.FontSizePt}pt");
-        if (wrapChanged) changes.Add($"Word Wrap: {(vm.WordWrap ? "On" : "Off")}");
-
-        if (changes.Count > 0)
-            vm.StatusText = $"Settings updated — {string.Join("; ", changes)}";
+        vm.StatusText = $"Font: {vm.FontFamilyName}, {vm.FontSizePt}pt, {vm.FontWeightName}";
     }
 
     private static readonly FilePickerFileType MarkdownFileType = new("Markdown Files")
@@ -1114,6 +1576,12 @@ public partial class MainWindow : Window
     {
         Patterns = new[] { "*.html", "*.htm" },
         MimeTypes = new[] { "text/html" }
+    };
+
+    private static readonly FilePickerFileType TextFileType = new("Text Files")
+    {
+        Patterns = new[] { "*.txt" },
+        MimeTypes = new[] { "text/plain" }
     };
 
     private async Task<string?> OpenFileDialogAsync()
@@ -1135,13 +1603,17 @@ public partial class MainWindow : Window
             : "document.md";
 
         var isHtml = suggestedPath?.EndsWith(".html") == true || suggestedPath?.EndsWith(".htm") == true;
-        var defaultType = isHtml ? HtmlFileType : MarkdownFileType;
+        var isTxt = suggestedPath?.EndsWith(".txt") == true;
+
+        var defaultType = isHtml ? HtmlFileType : isTxt ? TextFileType : MarkdownFileType;
+        var title = isHtml ? "Export as HTML" : isTxt ? "Export as Text" : "Save Markdown File";
+        var defaultExt = isHtml ? "html" : isTxt ? "txt" : "md";
 
         var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
-            Title = isHtml ? "Export as HTML" : "Save Markdown File",
+            Title = title,
             SuggestedFileName = suggestedName,
-            DefaultExtension = isHtml ? "html" : "md",
+            DefaultExtension = defaultExt,
             FileTypeChoices = new List<FilePickerFileType> { defaultType, FilePickerFileTypes.All }
         });
 
