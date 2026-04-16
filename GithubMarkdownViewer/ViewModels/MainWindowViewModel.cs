@@ -44,6 +44,9 @@ public partial class MainWindowViewModel : ViewModelBase
     private bool _wordWrap = true;
 
     [ObservableProperty]
+    private bool _showLineNumbers = true;
+
+    [ObservableProperty]
     private string _themeMode = "System";
 
     [ObservableProperty]
@@ -147,6 +150,7 @@ public partial class MainWindowViewModel : ViewModelBase
         ShowEditor = settings.ShowEditor;
         ShowPreview = settings.ShowPreview;
         WordWrap = settings.WordWrap;
+        ShowLineNumbers = settings.ShowLineNumbers;
         ThemeMode = settings.ThemeMode;
         DeclinedFileAssociation = settings.DeclinedFileAssociation;
 
@@ -196,6 +200,7 @@ public partial class MainWindowViewModel : ViewModelBase
             ShowEditor = ShowEditor,
             ShowPreview = ShowPreview,
             WordWrap = WordWrap,
+            ShowLineNumbers = ShowLineNumbers,
             ThemeMode = ThemeMode,
             DeclinedFileAssociation = DeclinedFileAssociation,
             WindowX = WindowX,

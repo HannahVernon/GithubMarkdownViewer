@@ -118,7 +118,7 @@
                     </Border>
 
                     <ae:TextEditor Name="Editor"
-                             ShowLineNumbers="True"
+                             ShowLineNumbers="{Binding ShowLineNumbers}"
                              FontFamily="{Binding EditorFontFamily}"
                              FontSize="{Binding FontSizePx}"
                              Padding="12"

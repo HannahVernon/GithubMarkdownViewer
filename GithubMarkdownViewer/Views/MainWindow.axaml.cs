@@ -569,6 +569,12 @@ public partial class MainWindow : Window
                 UpdatePreview(vm.MarkdownText);
             }
 
+            // Line numbers toggle
+            if (e.PropertyName is nameof(MainWindowViewModel.ShowLineNumbers))
+            {
+                Editor.ShowLineNumbers = vm.ShowLineNumbers;
+            }
+
             // Theme change: apply theme variant and re-render
             if (e.PropertyName is nameof(MainWindowViewModel.ThemeMode))
             {
@@ -1314,7 +1320,7 @@ public partial class MainWindow : Window
         {
             Title = "Settings",
             Width = 500,
-            Height = 520,
+            Height = 560,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             CanResize = false,
         };
@@ -1342,6 +1348,15 @@ public partial class MainWindow : Window
         {
             Content = "Word Wrap",
             IsChecked = vm.WordWrap,
+            FontSize = 14,
+            Margin = new Thickness(0, 0, 0, 8),
+        };
+
+        // ── Line Numbers ────────────────────────────────────────────
+        var lineNumbersCheck = new CheckBox
+        {
+            Content = "Show Line Numbers",
+            IsChecked = vm.ShowLineNumbers,
             FontSize = 14,
             Margin = new Thickness(0, 0, 0, 16),
         };
@@ -1470,6 +1485,7 @@ public partial class MainWindow : Window
                 themeLabel,
                 themeCombo,
                 wordWrapCheck,
+                lineNumbersCheck,
                 fontLabel,
                 fontList,
                 sizePanel,
@@ -1488,9 +1504,11 @@ public partial class MainWindow : Window
         var fontChanged = (fontList.SelectedItem as string) != vm.FontFamilyName;
         var sizeChanged = sizeUpDown.Value.HasValue && (double)sizeUpDown.Value.Value != vm.FontSizePt;
         var wrapChanged = wordWrapCheck.IsChecked != vm.WordWrap;
+        var lineNumChanged = lineNumbersCheck.IsChecked != vm.ShowLineNumbers;
 
         vm.ThemeMode = themeCombo.SelectedItem as string ?? "System";
         vm.WordWrap = wordWrapCheck.IsChecked ?? true;
+        vm.ShowLineNumbers = lineNumbersCheck.IsChecked ?? true;
 
         if (fontList.SelectedItem is string chosenFont)
             vm.FontFamilyName = chosenFont;
@@ -1503,6 +1521,7 @@ public partial class MainWindow : Window
         if (themeChanged) changes.Add($"Theme: {vm.ThemeMode}");
         if (fontChanged || sizeChanged) changes.Add($"Font: {vm.FontFamilyName}, {vm.FontSizePt}pt");
         if (wrapChanged) changes.Add($"Word Wrap: {(vm.WordWrap ? "On" : "Off")}");
+        if (lineNumChanged) changes.Add($"Line Numbers: {(vm.ShowLineNumbers ? "On" : "Off")}");
 
         if (changes.Count > 0)
             vm.StatusText = $"Settings updated — {string.Join("; ", changes)}";
