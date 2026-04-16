@@ -20,6 +20,9 @@ public class AppSettings
     [JsonPropertyName("fontFamily")]
     public string FontFamilyName { get; set; } = DefaultFontFamily;
 
+    [JsonPropertyName("fontWeightName")]
+    public string FontWeightName { get; set; } = "Regular";
+
     [JsonPropertyName("fontSizePt")]
     public double FontSizePt { get; set; } = DefaultFontSizePt;
 

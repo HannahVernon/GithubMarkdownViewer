@@ -395,6 +395,14 @@ public partial class MainWindow : Window
                 // Wire up About menu
                 AboutMenuItem.Click += async (_, _) => await ShowAboutDialogAsync();
 
+                // Wire up View > Theme submenu
+                ThemeSystemMenuItem.Click += (_, _) => { vm.ThemeMode = "System"; vm.SaveSettings(); };
+                ThemeLightMenuItem.Click += (_, _) => { vm.ThemeMode = "Light"; vm.SaveSettings(); };
+                ThemeDarkMenuItem.Click += (_, _) => { vm.ThemeMode = "Dark"; vm.SaveSettings(); };
+
+                // Set initial checkmarks on View menu items
+                UpdateViewMenuCheckmarks(vm);
+
                 // Wire up Edit > Find/Replace menu and find bar controls
                 FindMenuItem.Click += (_, _) => ShowFindBar(showReplace: false);
                 ReplaceMenuItem.Click += (_, _) => ShowFindBar(showReplace: true);
@@ -422,7 +430,7 @@ public partial class MainWindow : Window
                 // Try to reopen last document; fall back to sample content
                 _ = InitContentAsync(vm);
 
-                _renderer.SetFont(vm.FontFamilyName, vm.FontSizePx);
+                _renderer.SetFont(vm.FontFamilyName, vm.FontSizePx, vm.EditorFontWeight);
                 _renderer.SetWordWrap(vm.WordWrap);
                 ApplyWordWrapScrollBehavior(vm.WordWrap);
                 ApplyTheme(vm.ThemeMode);
@@ -555,9 +563,10 @@ public partial class MainWindow : Window
 
             // Font changes: update renderer and force re-render
             if (e.PropertyName is nameof(MainWindowViewModel.FontFamilyName)
-                               or nameof(MainWindowViewModel.FontSizePt))
+                               or nameof(MainWindowViewModel.FontSizePt)
+                               or nameof(MainWindowViewModel.FontWeightName))
             {
-                _renderer?.SetFont(vm.FontFamilyName, vm.FontSizePx);
+                _renderer?.SetFont(vm.FontFamilyName, vm.FontSizePx, vm.EditorFontWeight);
                 UpdatePreview(vm.MarkdownText);
             }
 
@@ -567,12 +576,14 @@ public partial class MainWindow : Window
                 _renderer?.SetWordWrap(vm.WordWrap);
                 ApplyWordWrapScrollBehavior(vm.WordWrap);
                 UpdatePreview(vm.MarkdownText);
+                UpdateViewMenuCheckmarks(vm);
             }
 
             // Line numbers toggle
             if (e.PropertyName is nameof(MainWindowViewModel.ShowLineNumbers))
             {
                 Editor.ShowLineNumbers = vm.ShowLineNumbers;
+                UpdateViewMenuCheckmarks(vm);
             }
 
             // Theme change: apply theme variant and re-render
@@ -580,6 +591,7 @@ public partial class MainWindow : Window
             {
                 ApplyTheme(vm.ThemeMode);
                 UpdatePreview(vm.MarkdownText);
+                UpdateViewMenuCheckmarks(vm);
             }
 
             // File path changed: restart file watcher
@@ -592,6 +604,29 @@ public partial class MainWindow : Window
         {
             AppLogger.Error("Error in property change handler", ex);
         }
+    }
+
+    private void UpdateViewMenuCheckmarks(MainWindowViewModel vm)
+    {
+        WordWrapMenuItem.Icon = vm.WordWrap ? CreateCheckIcon() : null;
+        LineNumbersMenuItem.Icon = vm.ShowLineNumbers ? CreateCheckIcon() : null;
+
+        ThemeSystemMenuItem.Icon = vm.ThemeMode == "System" ? CreateCheckIcon() : null;
+        ThemeLightMenuItem.Icon = vm.ThemeMode == "Light" ? CreateCheckIcon() : null;
+        ThemeDarkMenuItem.Icon = vm.ThemeMode == "Dark" ? CreateCheckIcon() : null;
+    }
+
+    private static object CreateCheckIcon()
+    {
+        return new Avalonia.Controls.Shapes.Path
+        {
+            Data = Avalonia.Media.StreamGeometry.Parse("M1,4.5 L3.5,7 L7,1"),
+            Stroke = Brushes.Gray,
+            StrokeThickness = 1.5,
+            Width = 10,
+            Height = 10,
+            Stretch = Stretch.Uniform,
+        };
     }
 
     private void UpdatePreview(string markdown)
@@ -1318,53 +1353,17 @@ public partial class MainWindow : Window
 
         var dialog = new Window
         {
-            Title = "Settings",
-            Width = 500,
-            Height = 560,
+            Title = "Font",
+            Width = 460,
+            Height = 420,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             CanResize = false,
         };
 
-        // ── Theme selector ──────────────────────────────────────────
-        var themeLabel = new TextBlock
-        {
-            Text = "Theme",
-            FontWeight = Avalonia.Media.FontWeight.SemiBold,
-            FontSize = 14,
-            Margin = new Thickness(0, 0, 0, 6),
-        };
-
-        var themeOptions = new[] { "System", "Light", "Dark" };
-        var themeCombo = new ComboBox
-        {
-            ItemsSource = themeOptions,
-            SelectedItem = themeOptions.Contains(vm.ThemeMode) ? vm.ThemeMode : "System",
-            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
-            Margin = new Thickness(0, 0, 0, 16),
-        };
-
-        // ── Word Wrap ───────────────────────────────────────────────
-        var wordWrapCheck = new CheckBox
-        {
-            Content = "Word Wrap",
-            IsChecked = vm.WordWrap,
-            FontSize = 14,
-            Margin = new Thickness(0, 0, 0, 8),
-        };
-
-        // ── Line Numbers ────────────────────────────────────────────
-        var lineNumbersCheck = new CheckBox
-        {
-            Content = "Show Line Numbers",
-            IsChecked = vm.ShowLineNumbers,
-            FontSize = 14,
-            Margin = new Thickness(0, 0, 0, 16),
-        };
-
-        // ── Font section ────────────────────────────────────────────
+        // ── Font family ─────────────────────────────────────────────
         var fontLabel = new TextBlock
         {
-            Text = "Font",
+            Text = "Font Family",
             FontWeight = Avalonia.Media.FontWeight.SemiBold,
             FontSize = 14,
             Margin = new Thickness(0, 0, 0, 6),
@@ -1379,7 +1378,7 @@ public partial class MainWindow : Window
         {
             ItemsSource = systemFonts,
             SelectedItem = systemFonts.Contains(vm.FontFamilyName) ? vm.FontFamilyName : systemFonts.FirstOrDefault(),
-            Height = 180,
+            Height = 200,
             Margin = new Thickness(0, 0, 0, 8),
         };
 
@@ -1400,6 +1399,21 @@ public partial class MainWindow : Window
             Width = 100,
         };
 
+        var weightLabel = new TextBlock
+        {
+            Text = "Weight:",
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            Margin = new Thickness(16, 0, 8, 0),
+        };
+
+        var weightCombo = new ComboBox
+        {
+            ItemsSource = MainWindowViewModel.AvailableFontWeights,
+            SelectedItem = MainWindowViewModel.AvailableFontWeights.Contains(vm.FontWeightName)
+                ? vm.FontWeightName : "Regular",
+            Width = 120,
+        };
+
         var fontPreview = new TextBlock
         {
             Text = "The quick brown fox jumps over the lazy dog",
@@ -1411,9 +1425,7 @@ public partial class MainWindow : Window
         fontList.SelectionChanged += (_, _) =>
         {
             if (fontList.SelectedItem is string selectedFont)
-            {
                 fontPreview.FontFamily = new FontFamily($"{selectedFont}, {Models.AppSettings.FallbackFontFamily}");
-            }
         };
 
         sizeUpDown.ValueChanged += (_, _) =>
@@ -1422,10 +1434,17 @@ public partial class MainWindow : Window
                 fontPreview.FontSize = (double)sizeUpDown.Value.Value * 96.0 / 72.0;
         };
 
+        weightCombo.SelectionChanged += (_, _) =>
+        {
+            if (weightCombo.SelectedItem is string selectedWeight)
+                fontPreview.FontWeight = MainWindowViewModel.ParseFontWeight(selectedWeight);
+        };
+
         // Set initial preview
         if (fontList.SelectedItem is string initialFont)
             fontPreview.FontFamily = new FontFamily($"{initialFont}, {Models.AppSettings.FallbackFontFamily}");
         fontPreview.FontSize = vm.FontSizePx;
+        fontPreview.FontWeight = vm.EditorFontWeight;
 
         // Scroll to currently selected font
         if (fontList.SelectedItem != null)
@@ -1438,10 +1457,10 @@ public partial class MainWindow : Window
             }, DispatcherPriority.Loaded);
         }
 
-        var sizePanel = new StackPanel
+        var sizeWeightPanel = new StackPanel
         {
             Orientation = Avalonia.Layout.Orientation.Horizontal,
-            Children = { sizeLabel, sizeUpDown },
+            Children = { sizeLabel, sizeUpDown, weightLabel, weightCombo },
         };
 
         // ── Buttons ─────────────────────────────────────────────────
@@ -1482,13 +1501,9 @@ public partial class MainWindow : Window
             Spacing = 0,
             Children =
             {
-                themeLabel,
-                themeCombo,
-                wordWrapCheck,
-                lineNumbersCheck,
                 fontLabel,
                 fontList,
-                sizePanel,
+                sizeWeightPanel,
                 fontPreview,
                 buttonPanel,
             },
@@ -1500,31 +1515,20 @@ public partial class MainWindow : Window
         if (!accepted) return;
 
         // Apply changes
-        var themeChanged = (themeCombo.SelectedItem as string ?? "System") != vm.ThemeMode;
         var fontChanged = (fontList.SelectedItem as string) != vm.FontFamilyName;
         var sizeChanged = sizeUpDown.Value.HasValue && (double)sizeUpDown.Value.Value != vm.FontSizePt;
-        var wrapChanged = wordWrapCheck.IsChecked != vm.WordWrap;
-        var lineNumChanged = lineNumbersCheck.IsChecked != vm.ShowLineNumbers;
-
-        vm.ThemeMode = themeCombo.SelectedItem as string ?? "System";
-        vm.WordWrap = wordWrapCheck.IsChecked ?? true;
-        vm.ShowLineNumbers = lineNumbersCheck.IsChecked ?? true;
+        var weightChanged = (weightCombo.SelectedItem as string ?? "Regular") != vm.FontWeightName;
 
         if (fontList.SelectedItem is string chosenFont)
             vm.FontFamilyName = chosenFont;
         if (sizeUpDown.Value.HasValue)
             vm.FontSizePt = (double)sizeUpDown.Value.Value;
+        vm.FontWeightName = weightCombo.SelectedItem as string ?? "Regular";
 
         vm.SaveSettings();
 
-        var changes = new List<string>();
-        if (themeChanged) changes.Add($"Theme: {vm.ThemeMode}");
-        if (fontChanged || sizeChanged) changes.Add($"Font: {vm.FontFamilyName}, {vm.FontSizePt}pt");
-        if (wrapChanged) changes.Add($"Word Wrap: {(vm.WordWrap ? "On" : "Off")}");
-        if (lineNumChanged) changes.Add($"Line Numbers: {(vm.ShowLineNumbers ? "On" : "Off")}");
-
-        if (changes.Count > 0)
-            vm.StatusText = $"Settings updated — {string.Join("; ", changes)}";
+        if (fontChanged || sizeChanged || weightChanged)
+            vm.StatusText = $"Font: {vm.FontFamilyName}, {vm.FontSizePt}pt, {vm.FontWeightName}";
     }
 
     private static readonly FilePickerFileType MarkdownFileType = new("Markdown Files")

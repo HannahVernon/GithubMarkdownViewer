@@ -48,11 +48,22 @@
                 <MenuItem Header="Find and _Replace..." Name="ReplaceMenuItem" InputGesture="Ctrl+H" />
             </MenuItem>
             <MenuItem Header="_View">
-                <MenuItem Header="_Split View" Command="{Binding ViewSplitCommand}" />
-                <MenuItem Header="_Editor Only" Command="{Binding ViewEditorOnlyCommand}" />
-                <MenuItem Header="_Preview Only" Command="{Binding ViewPreviewOnlyCommand}" />
+                <MenuItem Header="_Layout">
+                    <MenuItem Header="_Split View" Command="{Binding ViewSplitCommand}" />
+                    <MenuItem Header="_Editor Only" Command="{Binding ViewEditorOnlyCommand}" />
+                    <MenuItem Header="_Preview Only" Command="{Binding ViewPreviewOnlyCommand}" />
+                </MenuItem>
                 <Separator />
-                <MenuItem Header="_Settings..." Command="{Binding OpenSettingsCommand}" />
+                <MenuItem Header="_Word Wrap" Name="WordWrapMenuItem" Command="{Binding ToggleWordWrapCommand}" />
+                <MenuItem Header="Line _Numbers" Name="LineNumbersMenuItem" Command="{Binding ToggleLineNumbersCommand}" />
+                <Separator />
+                <MenuItem Header="_Theme">
+                    <MenuItem Header="_System" Name="ThemeSystemMenuItem" />
+                    <MenuItem Header="_Light" Name="ThemeLightMenuItem" />
+                    <MenuItem Header="_Dark" Name="ThemeDarkMenuItem" />
+                </MenuItem>
+                <Separator />
+                <MenuItem Header="_Font..." Command="{Binding OpenSettingsCommand}" />
             </MenuItem>
             <MenuItem Header="_Help">
                 <MenuItem Header="_About..." Name="AboutMenuItem" />
@@ -120,6 +131,7 @@
                     <ae:TextEditor Name="Editor"
                              ShowLineNumbers="{Binding ShowLineNumbers}"
                              FontFamily="{Binding EditorFontFamily}"
+                             FontWeight="{Binding EditorFontWeight}"
                              FontSize="{Binding FontSizePx}"
                              Padding="12"
                              BorderThickness="0"

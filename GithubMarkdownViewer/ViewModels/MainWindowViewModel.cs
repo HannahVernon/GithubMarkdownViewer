@@ -59,6 +59,10 @@ public partial class MainWindowViewModel : ViewModelBase
     private string _fontFamilyName = AppSettings.DefaultFontFamily;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(EditorFontWeight))]
+    private string _fontWeightName = "Regular";
+
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(FontSizePx))]
     private double _fontSizePt = AppSettings.DefaultFontSizePt;
 
@@ -67,16 +71,43 @@ public partial class MainWindowViewModel : ViewModelBase
     public ObservableCollection<string> RecentFiles { get; } = new();
 
     /// <summary>
-    /// FontFamily object for binding to the editor TextBox.
+    /// FontFamily object for binding to the editor.
     /// Uses the chosen font with a monospace fallback chain.
     /// </summary>
     public FontFamily EditorFontFamily =>
         new($"{FontFamilyName}, {AppSettings.FallbackFontFamily}");
 
     /// <summary>
+    /// FontWeight for binding to the editor.
+    /// </summary>
+    public FontWeight EditorFontWeight => ParseFontWeight(FontWeightName);
+
+    /// <summary>
     /// Font size in Avalonia device-independent pixels (96 dpi).
     /// </summary>
     public double FontSizePx => FontSizePt * 96.0 / 72.0;
+
+    /// <summary>
+    /// Available font weight names for the Font dialog.
+    /// </summary>
+    public static string[] AvailableFontWeights { get; } = new[]
+    {
+        "Thin", "ExtraLight", "Light", "Regular", "Medium",
+        "SemiBold", "Bold", "ExtraBold", "Black"
+    };
+
+    internal static FontWeight ParseFontWeight(string name) => name switch
+    {
+        "Thin" => FontWeight.Thin,
+        "ExtraLight" => FontWeight.ExtraLight,
+        "Light" => FontWeight.Light,
+        "Medium" => FontWeight.Medium,
+        "SemiBold" => FontWeight.SemiBold,
+        "Bold" => FontWeight.Bold,
+        "ExtraBold" => FontWeight.ExtraBold,
+        "Black" => FontWeight.Black,
+        _ => FontWeight.Regular,
+    };
 
     public string WindowTitle
     {
@@ -146,6 +177,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         var settings = SettingsService.Load();
         FontFamilyName = settings.FontFamilyName;
+        FontWeightName = settings.FontWeightName;
         FontSizePt = settings.FontSizePt;
         ShowEditor = settings.ShowEditor;
         ShowPreview = settings.ShowPreview;
@@ -194,6 +226,7 @@ public partial class MainWindowViewModel : ViewModelBase
         SettingsService.Save(new AppSettings
         {
             FontFamilyName = FontFamilyName,
+            FontWeightName = FontWeightName,
             FontSizePt = FontSizePt,
             LastOpenFilePath = CurrentFilePath,
             RecentFiles = RecentFiles.ToList(),
@@ -559,6 +592,13 @@ public partial class MainWindowViewModel : ViewModelBase
     private void ToggleWordWrap()
     {
         WordWrap = !WordWrap;
+        SaveSettings();
+    }
+
+    [RelayCommand]
+    private void ToggleLineNumbers()
+    {
+        ShowLineNumbers = !ShowLineNumbers;
         SaveSettings();
     }
 
