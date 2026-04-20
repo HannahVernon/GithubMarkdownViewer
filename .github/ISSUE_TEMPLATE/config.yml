@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://github.com/HannahVernon/GithubMarkdownViewer/blob/main/README.md
+    about: Check the README before opening an issue.
