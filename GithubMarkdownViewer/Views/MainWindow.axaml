@@ -44,6 +44,12 @@
                 <MenuItem Header="E_xit" Command="{Binding ExitAppCommand}" InputGesture="Alt+F4" />
             </MenuItem>
             <MenuItem Header="_Edit">
+                <MenuItem Header="Cu_t" Name="CutMenuItem" InputGesture="Ctrl+X" />
+                <MenuItem Header="_Copy" Name="CopyMenuItem" InputGesture="Ctrl+C" />
+                <MenuItem Header="_Paste" Name="PasteMenuItem" InputGesture="Ctrl+V" />
+                <Separator />
+                <MenuItem Header="Select _All" Name="SelectAllMenuItem" InputGesture="Ctrl+A" />
+                <Separator />
                 <MenuItem Header="_Find..." Name="FindMenuItem" InputGesture="Ctrl+F" />
                 <MenuItem Header="Find and _Replace..." Name="ReplaceMenuItem" InputGesture="Ctrl+H" />
             </MenuItem>
