@@ -12,6 +12,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Documents;
 using Avalonia.Controls.Primitives;
 using Avalonia.Media;
+using Avalonia.Input;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -414,6 +415,20 @@ public partial class MainWindow : Window
                 FindTextBox.KeyDown += OnFindTextBoxKeyDown;
                 ReplaceOneButton.Click += (_, _) => ReplaceOne();
                 ReplaceAllButton.Click += (_, _) => ReplaceAll();
+
+                // Wire up Edit > Cut/Copy/Paste/Select All
+                CutMenuItem.Click += (_, _) => EditorCut();
+                CopyMenuItem.Click += (_, _) => EditorCopy();
+                PasteMenuItem.Click += async (_, _) => await EditorPasteAsync();
+                SelectAllMenuItem.Click += (_, _) => EditorSelectAll();
+
+                // Update Edit menu item enabled state when the menu opens
+                var editMenu = CutMenuItem.Parent as MenuItem;
+                if (editMenu != null)
+                    editMenu.SubmenuOpened += async (_, _) => await UpdateEditMenuStateAsync();
+
+                // Build the editor context menu
+                SetupEditorContextMenu();
 
                 // Wire up navigation buttons
                 _backButton = this.FindControl<Button>("NavBackButton");
@@ -1216,6 +1231,90 @@ public partial class MainWindow : Window
         {
             FindStatusText.Text = "No matches";
         }
+    }
+
+    // ── Clipboard operations ────────────────────────────────────────
+
+    private void EditorCut()
+    {
+        if (Editor.TextArea.Selection.IsEmpty) return;
+        Editor.Cut();
+    }
+
+    private void EditorCopy()
+    {
+        if (Editor.TextArea.Selection.IsEmpty) return;
+        Editor.Copy();
+    }
+
+    private async Task EditorPasteAsync()
+    {
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (clipboard == null) return;
+#pragma warning disable CS0618
+        var text = await clipboard.GetTextAsync();
+#pragma warning restore CS0618
+        if (!string.IsNullOrEmpty(text))
+            Editor.Paste();
+    }
+
+    private void EditorSelectAll()
+    {
+        Editor.SelectAll();
+    }
+
+    private bool HasEditorSelection => !Editor.TextArea.Selection.IsEmpty;
+
+    private async Task<bool> ClipboardHasTextAsync()
+    {
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (clipboard == null) return false;
+#pragma warning disable CS0618
+        var text = await clipboard.GetTextAsync();
+#pragma warning restore CS0618
+        return !string.IsNullOrEmpty(text);
+    }
+
+    private async Task UpdateEditMenuStateAsync()
+    {
+        var hasSelection = HasEditorSelection;
+        var canPaste = await ClipboardHasTextAsync();
+        CutMenuItem.IsEnabled = hasSelection;
+        CopyMenuItem.IsEnabled = hasSelection;
+        PasteMenuItem.IsEnabled = canPaste;
+    }
+
+    private MenuItem _contextCutItem = null!;
+    private MenuItem _contextCopyItem = null!;
+    private MenuItem _contextPasteItem = null!;
+
+    private void SetupEditorContextMenu()
+    {
+        _contextCutItem = new MenuItem { Header = "Cu_t", InputGesture = new KeyGesture(Key.X, KeyModifiers.Control) };
+        _contextCopyItem = new MenuItem { Header = "_Copy", InputGesture = new KeyGesture(Key.C, KeyModifiers.Control) };
+        _contextPasteItem = new MenuItem { Header = "_Paste", InputGesture = new KeyGesture(Key.V, KeyModifiers.Control) };
+        var contextSelectAll = new MenuItem { Header = "Select _All", InputGesture = new KeyGesture(Key.A, KeyModifiers.Control) };
+
+        _contextCutItem.Click += (_, _) => EditorCut();
+        _contextCopyItem.Click += (_, _) => EditorCopy();
+        _contextPasteItem.Click += async (_, _) => await EditorPasteAsync();
+        contextSelectAll.Click += (_, _) => EditorSelectAll();
+
+        var contextMenu = new ContextMenu
+        {
+            Items = { _contextCutItem, _contextCopyItem, _contextPasteItem, new Separator(), contextSelectAll }
+        };
+
+        contextMenu.Opening += async (_, _) =>
+        {
+            var hasSelection = HasEditorSelection;
+            var canPaste = await ClipboardHasTextAsync();
+            _contextCutItem.IsEnabled = hasSelection;
+            _contextCopyItem.IsEnabled = hasSelection;
+            _contextPasteItem.IsEnabled = canPaste;
+        };
+
+        Editor.ContextMenu = contextMenu;
     }
 
     // ── File watcher ────────────────────────────────────────────────
