@@ -72,6 +72,8 @@
                 <MenuItem Header="_Font..." Command="{Binding OpenSettingsCommand}" />
             </MenuItem>
             <MenuItem Header="_Help">
+                <MenuItem Header="Check _File Association..." Name="CheckFileAssocMenuItem" />
+                <Separator />
                 <MenuItem Header="_About..." Name="AboutMenuItem" />
             </MenuItem>
         </Menu>
