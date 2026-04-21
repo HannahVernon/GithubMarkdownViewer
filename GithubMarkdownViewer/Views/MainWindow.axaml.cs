@@ -153,7 +153,7 @@ public partial class MainWindow : Window
                 return;
 
             var result = await ConfirmAsync(
-                "Markdown (.md) files are not currently associated with this application.\n\n" +
+                "Markdown (.md) files are not currently associated with this application. " +
                 "Would you like to associate .md files with GitHub Markdown Viewer so you can open them by double-clicking?");
 
             if (result)
@@ -179,6 +179,56 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             AppLogger.Error("File association check failed", ex);
+        }
+    }
+
+    /// <summary>
+    /// Manual file association check triggered from Help menu.
+    /// Unlike the startup check, this always reports the current status
+    /// and offers to re-associate even if previously declined.
+    /// </summary>
+    private async Task CheckFileAssociationManualAsync()
+    {
+        try
+        {
+            var status = FileAssociationService.GetStatus();
+
+            if (status.IsOurs)
+            {
+                await ShowMessageAsync("File Association",
+                    "Markdown (.md) files are associated with GitHub Markdown Viewer.");
+                return;
+            }
+
+            var currentApp = !string.IsNullOrEmpty(status.CurrentExePath)
+                ? Path.GetFileNameWithoutExtension(status.CurrentExePath)
+                : status.CurrentHandler ?? "another application";
+
+            var result = await ConfirmAsync(
+                $"Markdown (.md) files are currently handled by {currentApp}. " +
+                "Would you like to register GitHub Markdown Viewer and open Windows Settings so you can select it as the default?");
+
+            if (result)
+            {
+                var success = FileAssociationService.Associate();
+                if (success)
+                {
+                    FileAssociationService.OpenSystemDefaultAppSettings();
+                    await ShowMessageAsync("File Association",
+                        "GitHub Markdown Viewer has been registered for .md files. " +
+                        "In the Windows Settings window that opened, find \".md\" and " +
+                        "select \"GitHub Markdown Viewer\" as the default app.");
+                }
+                else
+                {
+                    await ShowMessageAsync("File Association",
+                        "Failed to register the file association. Check the application log for details.");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Error("Manual file association check failed", ex);
         }
     }
 
@@ -396,6 +446,9 @@ public partial class MainWindow : Window
 
                 // Wire up About menu
                 AboutMenuItem.Click += async (_, _) => await ShowAboutDialogAsync();
+
+                // Wire up Help > Check File Association
+                CheckFileAssocMenuItem.Click += async (_, _) => await CheckFileAssociationManualAsync();
 
                 // Wire up View > Theme submenu
                 ThemeSystemMenuItem.Click += (_, _) => { vm.ThemeMode = "System"; vm.SaveSettings(); };
@@ -1753,7 +1806,7 @@ public partial class MainWindow : Window
         {
             Title = "Confirm",
             Width = 420,
-            Height = 160,
+            SizeToContent = SizeToContent.Height,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             CanResize = false,
             Content = new StackPanel

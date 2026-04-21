@@ -531,14 +531,25 @@ public class MarkdownToAvaloniaRenderer
         {
             if (!weakRenderer.TryGetTarget(out var renderer)) return;
             var linkRun = FindLinkRunAtPoint(target, e.GetPosition(target), renderer._linkRunUrls);
-            target.Cursor = linkRun != null
-                ? new Cursor(StandardCursorType.Hand)
-                : Cursor.Default;
+            if (linkRun != null && renderer._linkRunUrls.TryGetValue(linkRun, out var url))
+            {
+                target.Cursor = new Cursor(StandardCursorType.Hand);
+                ToolTip.SetTip(target, url);
+                ToolTip.SetIsOpen(target, true);
+            }
+            else
+            {
+                target.Cursor = Cursor.Default;
+                ToolTip.SetIsOpen(target, false);
+                ToolTip.SetTip(target, null);
+            }
         };
 
         target.PointerExited += (_, _) =>
         {
             target.Cursor = Cursor.Default;
+            ToolTip.SetIsOpen(target, false);
+            ToolTip.SetTip(target, null);
         };
     }
 
