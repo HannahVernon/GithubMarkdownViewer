@@ -68,6 +68,13 @@ public class MarkdownToAvaloniaRenderer
 
     private readonly MarkdownPipeline _pipeline;
 
+    /// <summary>
+    /// Maps link Run inlines to their target URLs for click handling.
+    /// Populated during inline conversion, consumed by pointer event handlers.
+    /// Cleared on each Render call.
+    /// </summary>
+    private readonly Dictionary<Avalonia.Controls.Documents.Run, string> _linkRunUrls = new();
+
     // Current font settings — updated before each render
     private FontFamily _bodyFont = new("Inter, Segoe UI, sans-serif");
     private FontFamily _monoFont = new("Cascadia Code, Consolas, Menlo, monospace");
@@ -146,6 +153,7 @@ public class MarkdownToAvaloniaRenderer
     /// </summary>
     public IEnumerable<Control> Render(string markdown)
     {
+        _linkRunUrls.Clear();
         ApplyThemePalette();
         var document = Markdig.Markdown.Parse(markdown, _pipeline);
         return RenderBlocks(document);
@@ -481,6 +489,97 @@ public class MarkdownToAvaloniaRenderer
             foreach (var run in ConvertInline(inline))
                 target.Inlines.Add(run);
         }
+
+        // If this text block contains any link Runs, wire up click and cursor handling
+        WireLinkPointerEvents(target);
+    }
+
+    /// <summary>
+    /// Attaches pointer event handlers to a SelectableTextBlock so that
+    /// link Runs (tracked in _linkRunUrls) are clickable and show a hand cursor.
+    /// </summary>
+    private void WireLinkPointerEvents(SelectableTextBlock target)
+    {
+        var linkRuns = target.Inlines?
+            .OfType<Avalonia.Controls.Documents.Run>()
+            .Where(r => _linkRunUrls.ContainsKey(r))
+            .ToList();
+
+        if (linkRuns == null || linkRuns.Count == 0) return;
+
+        var weakRenderer = new WeakReference<MarkdownToAvaloniaRenderer>(this);
+
+        // Use Tapped (complete press+release cycle) instead of PointerPressed
+        // because SelectableTextBlock captures the pointer on PointerPressed
+        // for text selection, which swallows the first click on a link.
+        target.AddHandler(
+            Avalonia.Input.InputElement.TappedEvent,
+            (_, e) =>
+            {
+                if (!weakRenderer.TryGetTarget(out var renderer)) return;
+                var linkRun = FindLinkRunAtPoint(target, e.GetPosition(target), renderer._linkRunUrls);
+                if (linkRun != null && renderer._linkRunUrls.TryGetValue(linkRun, out var url))
+                {
+                    e.Handled = true;
+                    renderer.LinkClicked?.Invoke(url);
+                }
+            },
+            Avalonia.Interactivity.RoutingStrategies.Bubble,
+            handledEventsToo: true);
+
+        target.PointerMoved += (_, e) =>
+        {
+            if (!weakRenderer.TryGetTarget(out var renderer)) return;
+            var linkRun = FindLinkRunAtPoint(target, e.GetPosition(target), renderer._linkRunUrls);
+            target.Cursor = linkRun != null
+                ? new Cursor(StandardCursorType.Hand)
+                : Cursor.Default;
+        };
+
+        target.PointerExited += (_, _) =>
+        {
+            target.Cursor = Cursor.Default;
+        };
+    }
+
+    /// <summary>
+    /// Hit-tests a point within a SelectableTextBlock to find which link Run (if any)
+    /// is at that position. Uses the TextLayout for character-level hit testing,
+    /// then maps the character index back to the corresponding inline Run.
+    /// </summary>
+    private static Avalonia.Controls.Documents.Run? FindLinkRunAtPoint(
+        SelectableTextBlock textBlock,
+        Point point,
+        Dictionary<Avalonia.Controls.Documents.Run, string> linkUrls)
+    {
+        if (textBlock.Inlines == null) return null;
+
+        // Use the TextLayout from the TextBlock for hit testing
+        var textLayout = textBlock.TextLayout;
+        if (textLayout == null) return null;
+
+        var hit = textLayout.HitTestPoint(point);
+        var charIndex = hit.TextPosition;
+
+        // Map character index back to the inline Run at that position
+        var offset = 0;
+        foreach (var inline in textBlock.Inlines)
+        {
+            if (inline is Avalonia.Controls.Documents.Run run)
+            {
+                var runLength = run.Text?.Length ?? 0;
+                if (charIndex >= offset && charIndex < offset + runLength)
+                {
+                    return linkUrls.ContainsKey(run) ? run : null;
+                }
+                offset += runLength;
+            }
+            else if (inline is Avalonia.Controls.Documents.LineBreak)
+            {
+                offset += 1;
+            }
+        }
+        return null;
     }
 
     private IEnumerable<Avalonia.Controls.Documents.Inline> ConvertInline(Markdig.Syntax.Inlines.Inline inline)
@@ -594,35 +693,22 @@ public class MarkdownToAvaloniaRenderer
     }
 
     /// <summary>
-    /// Creates a clickable inline link that raises <see cref="LinkClicked"/> when clicked.
-    /// Uses an InlineUIContainer wrapping a TextBlock styled as a hyperlink.
-    /// A WeakReference to the renderer prevents detached controls from pinning
-    /// this object (and its event subscribers) in memory after preview re-renders.
+    /// Creates an inline Run styled as a hyperlink. The URL is tracked in
+    /// <see cref="_linkRunUrls"/> for click handling by the parent TextBlock's
+    /// pointer event handlers (wired in <see cref="WireLinkPointerEvents"/>).
     /// </summary>
-    private InlineUIContainer CreateClickableLink(string displayText, string url)
+    private Avalonia.Controls.Documents.Run CreateClickableLink(string displayText, string url)
     {
-        var tb = new TextBlock
+        var run = new Avalonia.Controls.Documents.Run(displayText)
         {
-            Text = displayText,
             Foreground = _linkForeground,
             FontWeight = _baseFontWeight,
             TextDecorations = TextDecorations.Underline,
-            Cursor = new Cursor(StandardCursorType.Hand),
             FontFamily = _bodyFont,
             FontSize = _baseFontSize,
-            TextWrapping = _bodyTextWrapping,
-        };
-        ToolTip.SetTip(tb, url);
-
-        var capturedUrl = url;
-        var weakRenderer = new WeakReference<MarkdownToAvaloniaRenderer>(this);
-        tb.PointerPressed += (_, e) =>
-        {
-            e.Handled = true;
-            if (weakRenderer.TryGetTarget(out var renderer))
-                renderer.LinkClicked?.Invoke(capturedUrl);
         };
 
-        return new InlineUIContainer { Child = tb };
+        _linkRunUrls[run] = url;
+        return run;
     }
 }
