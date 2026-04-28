@@ -15,7 +15,9 @@ Built with [Avalonia UI](https://avaloniaui.net/) and [Markdig](https://github.c
 
 ### Clickable Links & Navigation
 - **Clickable `.md` links** — relative markdown links in the preview pane open the linked file in the editor
-- **Back / Forward navigation** — browser-style history when navigating between `.md` files, with toolbar buttons, keyboard shortcuts (Alt+Left / Alt+Right), and mouse back/forward button support
+- **Anchor links** — `#heading` links scroll to the matching heading within the current document; `file.md#heading` links navigate to the file and then scroll to the heading
+- **GitHub-compatible heading IDs** — heading anchors are generated using GitHub's algorithm (preserves leading numbers, converts em dashes to hyphens)
+- **Back / Forward navigation** — browser-style history with scroll-position restoration, supporting toolbar buttons, keyboard shortcuts (Alt+Left / Alt+Right), and mouse back/forward buttons; anchor jumps within the same file are also added to the history stack
 - **External links** — `http` / `https` links open in the default browser
 - **Link tooltips** — hover over any link to see the full URL
 
