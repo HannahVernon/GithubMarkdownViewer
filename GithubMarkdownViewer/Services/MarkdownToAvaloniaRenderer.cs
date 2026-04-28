@@ -13,6 +13,7 @@ using Markdig.Syntax;
 using Markdig.Syntax.Inlines;
 using Markdig.Extensions.TaskLists;
 using Markdig.Extensions.Tables;
+using Markdig.Renderers.Html;
 
 namespace GithubMarkdownViewer.Services;
 
@@ -279,9 +280,12 @@ public class MarkdownToAvaloniaRenderer
         };
         SetInlines(tb, heading.Inline);
 
+        // Set the anchor ID from Markdig's AutoIdentifiers extension
+        var headingId = heading.GetAttributes().Id;
+
         if (heading.Level <= 2)
         {
-            return new Border
+            var border = new Border
             {
                 BorderBrush = _codeBorder,
                 BorderThickness = new Thickness(0, 0, 0, 1),
@@ -289,8 +293,13 @@ public class MarkdownToAvaloniaRenderer
                 Margin = new Thickness(0, 16, 0, 8),
                 Child = tb,
             };
+            if (!string.IsNullOrEmpty(headingId))
+                border.Name = headingId;
+            return border;
         }
 
+        if (!string.IsNullOrEmpty(headingId))
+            tb.Name = headingId;
         return tb;
     }
 
