@@ -33,9 +33,10 @@ public partial class MainWindow : Window
     private bool _isSyncingScroll;
     private bool _suppressTextChanged;
 
-    // Navigation history for .md link traversal
-    private readonly Stack<string> _backStack = new();
-    private readonly Stack<string> _forwardStack = new();
+    // Navigation history for .md link traversal and anchor jumps
+    private record NavigationEntry(string FilePath, double ScrollOffset);
+    private readonly Stack<NavigationEntry> _backStack = new();
+    private readonly Stack<NavigationEntry> _forwardStack = new();
     private Button? _backButton;
     private Button? _forwardButton;
 
@@ -954,6 +955,13 @@ public partial class MainWindow : Window
         {
             if (string.IsNullOrWhiteSpace(url)) return;
 
+            // Handle anchor-only links (#section)
+            if (url.StartsWith('#'))
+            {
+                ScrollToAnchor(url[1..]);
+                return;
+            }
+
             // Check if this is a relative .md link (not a full URL)
             if (IsRelativeMarkdownLink(url))
             {
@@ -992,12 +1000,48 @@ public partial class MainWindow : Window
         return pathPart.EndsWith(".md", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Scrolls the preview pane to the control whose Name matches the given anchor ID.
+    /// Optionally pushes the current position onto the back stack for navigation.
+    /// </summary>
+    private void ScrollToAnchor(string anchorId, bool pushToBackStack = true)
+    {
+        if (string.IsNullOrEmpty(anchorId)) return;
+
+        foreach (var child in PreviewPanel.Children)
+        {
+            if (!string.Equals(child.Name, anchorId, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var transform = child.TransformToVisual(PreviewPanel);
+            if (transform == null) continue;
+
+            if (pushToBackStack && DataContext is MainWindowViewModel vm
+                && !string.IsNullOrEmpty(vm.CurrentFilePath))
+            {
+                _backStack.Push(new NavigationEntry(vm.CurrentFilePath, PreviewScrollViewer.Offset.Y));
+                _forwardStack.Clear();
+                UpdateNavigationButtons();
+            }
+
+            var position = transform.Value.Transform(new Point(0, 0));
+            // Account for PreviewPanel margin (20px)
+            var targetY = position.Y + 20;
+            PreviewScrollViewer.Offset = new Vector(PreviewScrollViewer.Offset.X, targetY);
+            return;
+        }
+
+        AppLogger.Warn($"Anchor not found: #{anchorId}");
+    }
+
     private async Task OpenRelativeMarkdownFileAsync(string relativeUrl)
     {
         if (DataContext is not MainWindowViewModel vm) return;
 
-        // Strip fragment
-        var pathPart = relativeUrl.Split('#')[0];
+        // Extract fragment (e.g. "file.md#section" → fragment = "section")
+        var hashIndex = relativeUrl.IndexOf('#');
+        var pathPart = hashIndex >= 0 ? relativeUrl[..hashIndex] : relativeUrl;
+        var fragment = hashIndex >= 0 ? relativeUrl[(hashIndex + 1)..] : null;
 
         // URL-decode (e.g. %20 → space)
         pathPart = Uri.UnescapeDataString(pathPart);
@@ -1065,10 +1109,10 @@ public partial class MainWindow : Window
         // Open the linked .md file
         try
         {
-            // Push current file onto back stack before navigating
+            // Push current file and scroll position onto back stack before navigating
             if (!string.IsNullOrEmpty(vm.CurrentFilePath))
             {
-                _backStack.Push(vm.CurrentFilePath);
+                _backStack.Push(new NavigationEntry(vm.CurrentFilePath, PreviewScrollViewer.Offset.Y));
                 _forwardStack.Clear();
                 UpdateNavigationButtons();
             }
@@ -1080,6 +1124,12 @@ public partial class MainWindow : Window
             vm.AddToRecentFiles(resolvedPath);
             vm.StatusText = $"Opened: {Path.GetFileName(resolvedPath)}";
             UpdatePreview(content);
+
+            // Scroll to fragment anchor after layout completes
+            if (!string.IsNullOrEmpty(fragment))
+            {
+                Dispatcher.UIThread.Post(() => ScrollToAnchor(fragment, pushToBackStack: false), DispatcherPriority.Loaded);
+            }
         }
         catch (Exception ex)
         {
@@ -1119,14 +1169,14 @@ public partial class MainWindow : Window
         {
             _backButton.IsEnabled = _backStack.Count > 0;
             ToolTip.SetTip(_backButton, _backStack.Count > 0
-                ? $"Back to {Path.GetFileName(_backStack.Peek())} (Alt+Left)"
+                ? $"Back to {Path.GetFileName(_backStack.Peek().FilePath)} (Alt+Left)"
                 : "Navigate back (Alt+Left)");
         }
         if (_forwardButton != null)
         {
             _forwardButton.IsEnabled = _forwardStack.Count > 0;
             ToolTip.SetTip(_forwardButton, _forwardStack.Count > 0
-                ? $"Forward to {Path.GetFileName(_forwardStack.Peek())} (Alt+Right)"
+                ? $"Forward to {Path.GetFileName(_forwardStack.Peek().FilePath)} (Alt+Right)"
                 : "Navigate forward (Alt+Right)");
         }
     }
@@ -1136,17 +1186,38 @@ public partial class MainWindow : Window
         if (_backStack.Count == 0) return;
         if (DataContext is not MainWindowViewModel vm) return;
 
-        if (vm.IsModified)
+        var target = _backStack.Pop();
+
+        // Push current position onto forward stack
+        if (!string.IsNullOrEmpty(vm.CurrentFilePath))
+            _forwardStack.Push(new NavigationEntry(vm.CurrentFilePath, PreviewScrollViewer.Offset.Y));
+
+        if (string.Equals(target.FilePath, vm.CurrentFilePath, StringComparison.OrdinalIgnoreCase))
         {
-            var canProceed = await vm.HandleUnsavedChangesAsync();
-            if (!canProceed) return;
+            // Same file — just restore scroll position
+            PreviewScrollViewer.Offset = new Vector(PreviewScrollViewer.Offset.X, target.ScrollOffset);
+        }
+        else
+        {
+            if (vm.IsModified)
+            {
+                var canProceed = await vm.HandleUnsavedChangesAsync();
+                if (!canProceed)
+                {
+                    // Undo the stack changes
+                    _forwardStack.Pop();
+                    _backStack.Push(target);
+                    return;
+                }
+            }
+            await NavigateToFileAsync(vm, target.FilePath);
+            // Restore scroll position after layout
+            var scrollY = target.ScrollOffset;
+            Dispatcher.UIThread.Post(() =>
+                PreviewScrollViewer.Offset = new Vector(PreviewScrollViewer.Offset.X, scrollY),
+                DispatcherPriority.Loaded);
         }
 
-        var target = _backStack.Pop();
-        if (!string.IsNullOrEmpty(vm.CurrentFilePath))
-            _forwardStack.Push(vm.CurrentFilePath);
-
-        await NavigateToFileAsync(vm, target);
         UpdateNavigationButtons();
     }
 
@@ -1155,17 +1226,35 @@ public partial class MainWindow : Window
         if (_forwardStack.Count == 0) return;
         if (DataContext is not MainWindowViewModel vm) return;
 
-        if (vm.IsModified)
+        var target = _forwardStack.Pop();
+
+        // Push current position onto back stack
+        if (!string.IsNullOrEmpty(vm.CurrentFilePath))
+            _backStack.Push(new NavigationEntry(vm.CurrentFilePath, PreviewScrollViewer.Offset.Y));
+
+        if (string.Equals(target.FilePath, vm.CurrentFilePath, StringComparison.OrdinalIgnoreCase))
         {
-            var canProceed = await vm.HandleUnsavedChangesAsync();
-            if (!canProceed) return;
+            PreviewScrollViewer.Offset = new Vector(PreviewScrollViewer.Offset.X, target.ScrollOffset);
+        }
+        else
+        {
+            if (vm.IsModified)
+            {
+                var canProceed = await vm.HandleUnsavedChangesAsync();
+                if (!canProceed)
+                {
+                    _backStack.Pop();
+                    _forwardStack.Push(target);
+                    return;
+                }
+            }
+            await NavigateToFileAsync(vm, target.FilePath);
+            var scrollY = target.ScrollOffset;
+            Dispatcher.UIThread.Post(() =>
+                PreviewScrollViewer.Offset = new Vector(PreviewScrollViewer.Offset.X, scrollY),
+                DispatcherPriority.Loaded);
         }
 
-        var target = _forwardStack.Pop();
-        if (!string.IsNullOrEmpty(vm.CurrentFilePath))
-            _backStack.Push(vm.CurrentFilePath);
-
-        await NavigateToFileAsync(vm, target);
         UpdateNavigationButtons();
     }
 

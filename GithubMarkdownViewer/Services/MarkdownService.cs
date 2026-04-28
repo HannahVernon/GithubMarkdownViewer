@@ -1,4 +1,5 @@
 using Markdig;
+using Markdig.Extensions.AutoIdentifiers;
 
 namespace GithubMarkdownViewer.Services;
 
@@ -104,7 +105,7 @@ public class MarkdownService
             .UsePipeTables()
             .UseGridTables()
             .UseFootnotes()
-            .UseAutoIdentifiers()
+            .UseAutoIdentifiers(AutoIdentifierOptions.GitHub)
             .UseDefinitionLists()
             .UseAbbreviations()
             .UseFigures()
