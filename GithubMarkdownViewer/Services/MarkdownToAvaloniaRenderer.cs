@@ -13,6 +13,7 @@ using Markdig.Syntax;
 using Markdig.Syntax.Inlines;
 using Markdig.Extensions.TaskLists;
 using Markdig.Extensions.Tables;
+using Markdig.Renderers.Html;
 
 namespace GithubMarkdownViewer.Services;
 
@@ -24,6 +25,12 @@ namespace GithubMarkdownViewer.Services;
 /// </summary>
 public class MarkdownToAvaloniaRenderer
 {
+    /// <summary>
+    /// Records the source line range for a rendered preview control.
+    /// StartLine/EndLine are 1-based (matching AvaloniaEdit document lines).
+    /// </summary>
+    public record SourceLineSpan(int StartLine, int EndLine);
+
     // GitHub Light palette
     private static readonly IBrush LightCodeBackground = new SolidColorBrush(Color.Parse("#f6f8fa"));
     private static readonly IBrush LightCodeBorder = new SolidColorBrush(Color.Parse("#d1d9e0"));
@@ -168,51 +175,77 @@ public class MarkdownToAvaloniaRenderer
         }
     }
 
+    /// <summary>
+    /// Tags a control with its source line range for scroll sync.
+    /// Markdig Block.Line is 0-based; AvaloniaEdit lines are 1-based.
+    /// </summary>
+    private static Control TagWithSourceLine(Control control, Block block)
+    {
+        var startLine = block.Line + 1;
+        var endLine = GetBlockEndLine(block) + 1;
+        control.Tag = new SourceLineSpan(startLine, endLine);
+        return control;
+    }
+
+    /// <summary>
+    /// Finds the last source line of a block by recursively checking children.
+    /// </summary>
+    private static int GetBlockEndLine(Block block)
+    {
+        if (block is ContainerBlock container && container.Count > 0)
+            return GetBlockEndLine(container.Last()!);
+
+        if (block is LeafBlock leaf)
+            return leaf.Lines.Count > 0 ? leaf.Line + leaf.Lines.Count - 1 : leaf.Line;
+
+        return block.Line;
+    }
+
     private IEnumerable<Control> RenderBlock(Block block)
     {
         switch (block)
         {
             case HeadingBlock heading:
-                yield return RenderHeading(heading);
+                yield return TagWithSourceLine(RenderHeading(heading), heading);
                 break;
 
             case ParagraphBlock paragraph:
-                yield return RenderParagraph(paragraph);
+                yield return TagWithSourceLine(RenderParagraph(paragraph), paragraph);
                 break;
 
             case FencedCodeBlock fencedCode:
-                yield return RenderCodeBlock(fencedCode);
+                yield return TagWithSourceLine(RenderCodeBlock(fencedCode), fencedCode);
                 break;
 
             case CodeBlock codeBlock:
-                yield return RenderCodeBlock(codeBlock);
+                yield return TagWithSourceLine(RenderCodeBlock(codeBlock), codeBlock);
                 break;
 
             case QuoteBlock quote:
-                yield return RenderBlockquote(quote);
+                yield return TagWithSourceLine(RenderBlockquote(quote), quote);
                 break;
 
             case ListBlock list:
-                yield return RenderList(list);
+                yield return TagWithSourceLine(RenderList(list), list);
                 break;
 
-            case ThematicBreakBlock:
-                yield return RenderHorizontalRule();
+            case ThematicBreakBlock thematicBreak:
+                yield return TagWithSourceLine(RenderHorizontalRule(), thematicBreak);
                 break;
 
             case Markdig.Extensions.Tables.Table table:
-                yield return RenderTable(table);
+                yield return TagWithSourceLine(RenderTable(table), table);
                 break;
 
             case HtmlBlock htmlBlock:
-                yield return RenderHtmlBlock(htmlBlock);
+                yield return TagWithSourceLine(RenderHtmlBlock(htmlBlock), htmlBlock);
                 break;
 
             default:
                 // Fallback: render as plain text
                 if (block is LeafBlock leaf && leaf.Inline != null)
                 {
-                    yield return RenderParagraph(leaf);
+                    yield return TagWithSourceLine(RenderParagraph(leaf), leaf);
                     break;
                 }
                 if (block is ContainerBlock container)
@@ -247,9 +280,12 @@ public class MarkdownToAvaloniaRenderer
         };
         SetInlines(tb, heading.Inline);
 
+        // Set the anchor ID from Markdig's AutoIdentifiers extension
+        var headingId = heading.GetAttributes().Id;
+
         if (heading.Level <= 2)
         {
-            return new Border
+            var border = new Border
             {
                 BorderBrush = _codeBorder,
                 BorderThickness = new Thickness(0, 0, 0, 1),
@@ -257,8 +293,13 @@ public class MarkdownToAvaloniaRenderer
                 Margin = new Thickness(0, 16, 0, 8),
                 Child = tb,
             };
+            if (!string.IsNullOrEmpty(headingId))
+                border.Name = headingId;
+            return border;
         }
 
+        if (!string.IsNullOrEmpty(headingId))
+            tb.Name = headingId;
         return tb;
     }
 
@@ -535,12 +576,13 @@ public class MarkdownToAvaloniaRenderer
             {
                 target.Cursor = new Cursor(StandardCursorType.Hand);
                 ToolTip.SetTip(target, url);
-                ToolTip.SetIsOpen(target, true);
+                // Let Avalonia's built-in tooltip delay handle display timing
+                // instead of forcing SetIsOpen which invalidates layout on every move
+                ToolTip.SetShowDelay(target, 400);
             }
             else
             {
                 target.Cursor = Cursor.Default;
-                ToolTip.SetIsOpen(target, false);
                 ToolTip.SetTip(target, null);
             }
         };
@@ -548,7 +590,6 @@ public class MarkdownToAvaloniaRenderer
         target.PointerExited += (_, _) =>
         {
             target.Cursor = Cursor.Default;
-            ToolTip.SetIsOpen(target, false);
             ToolTip.SetTip(target, null);
         };
     }

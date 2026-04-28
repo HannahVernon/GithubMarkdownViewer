@@ -33,9 +33,10 @@ public partial class MainWindow : Window
     private bool _isSyncingScroll;
     private bool _suppressTextChanged;
 
-    // Navigation history for .md link traversal
-    private readonly Stack<string> _backStack = new();
-    private readonly Stack<string> _forwardStack = new();
+    // Navigation history for .md link traversal and anchor jumps
+    private record NavigationEntry(string FilePath, double ScrollOffset);
+    private readonly Stack<NavigationEntry> _backStack = new();
+    private readonly Stack<NavigationEntry> _forwardStack = new();
     private Button? _backButton;
     private Button? _forwardButton;
 
@@ -517,7 +518,16 @@ public partial class MainWindow : Window
         }
     }
 
-    // ── Scroll synchronization (bidirectional) ─────────────────────────
+    // ── Scroll synchronization (line-number matching) ──────────────────
+
+    /// <summary>
+    /// Cached Y position and height of each preview control mapped to source lines.
+    /// </summary>
+    private record ScrollAnchor(int StartLine, int EndLine, double YOffset, double Height);
+
+    private List<ScrollAnchor>? _scrollAnchors;
+    private Vector _lastEditorOffset;
+    private Vector _lastPreviewOffset;
 
     private void OnEditorTemplateApplied(object? sender, TemplateAppliedEventArgs e)
     {
@@ -526,7 +536,7 @@ public partial class MainWindow : Window
 
     private void TryInitScrollSync()
     {
-        if (_editorScrollViewer != null) return; // already initialized
+        if (_editorScrollViewer != null) return;
 
         _editorScrollViewer = Editor
             .GetVisualDescendants()
@@ -537,6 +547,8 @@ public partial class MainWindow : Window
         {
             _editorScrollViewer.PropertyChanged += OnEditorScrollPropertyChanged;
             PreviewScrollViewer.PropertyChanged += OnPreviewScrollPropertyChanged;
+            // Rebuild anchors when layout changes (window resize, splitter drag)
+            PreviewScrollViewer.PropertyChanged += OnPreviewExtentChanged;
             AppLogger.Info("Scroll sync initialized");
         }
         else
@@ -547,60 +559,259 @@ public partial class MainWindow : Window
 
     private void OnEditorScrollPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
     {
-        if (e.Property == ScrollViewer.OffsetProperty)
-            SyncScroll(source: "editor");
+        if (e.Property != ScrollViewer.OffsetProperty) return;
+        var newOffset = (Vector)e.NewValue!;
+        // Skip horizontal-only changes
+        if (Math.Abs(newOffset.Y - _lastEditorOffset.Y) < 0.5)
+        {
+            _lastEditorOffset = newOffset;
+            return;
+        }
+        _lastEditorOffset = newOffset;
+        SyncEditorToPreview();
     }
 
     private void OnPreviewScrollPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
     {
-        if (e.Property == ScrollViewer.OffsetProperty)
-            SyncScroll(source: "preview");
+        if (e.Property != ScrollViewer.OffsetProperty) return;
+        var newOffset = (Vector)e.NewValue!;
+        if (Math.Abs(newOffset.Y - _lastPreviewOffset.Y) < 0.5)
+        {
+            _lastPreviewOffset = newOffset;
+            return;
+        }
+        _lastPreviewOffset = newOffset;
+        SyncPreviewToEditor();
     }
 
-    private void SyncScroll(string source)
+    private void OnPreviewExtentChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
     {
-        if (_isSyncingScroll || _editorScrollViewer == null) return;
+        if (e.Property == ScrollViewer.ExtentProperty || e.Property == ScrollViewer.ViewportProperty)
+        {
+            Dispatcher.UIThread.Post(RebuildScrollAnchors, DispatcherPriority.Loaded);
+        }
+    }
+
+    /// <summary>
+    /// Rebuilds the scroll anchor cache from the current preview panel children.
+    /// Each anchor maps a source line range to a Y position within the PreviewScrollViewer.
+    /// </summary>
+    private void RebuildScrollAnchors()
+    {
+        var anchors = new List<ScrollAnchor>();
+
+        foreach (var child in PreviewPanel.Children)
+        {
+            if (child.Tag is not MarkdownToAvaloniaRenderer.SourceLineSpan span) continue;
+
+            // Get the child's position relative to the PreviewScrollViewer content area
+            var transform = child.TransformToVisual(PreviewPanel);
+            if (transform == null) continue;
+
+            var topLeft = transform.Value.Transform(new Point(0, 0));
+            var height = child.Bounds.Height;
+
+            anchors.Add(new ScrollAnchor(span.StartLine, span.EndLine, topLeft.Y, height));
+        }
+
+        _scrollAnchors = anchors;
+    }
+
+    /// <summary>
+    /// Editor scrolled → find the source line at editor viewport center → scroll preview to match.
+    /// </summary>
+    private void SyncEditorToPreview()
+    {
+        if (_isSyncingScroll || _editorScrollViewer == null || _scrollAnchors == null || _scrollAnchors.Count == 0)
+            return;
 
         try
         {
             _isSyncingScroll = true;
 
-            ScrollViewer from, to;
-            if (source == "editor")
+            var textView = Editor.TextArea.TextView;
+            var editorViewportCenter = _editorScrollViewer.Offset.Y + _editorScrollViewer.Viewport.Height / 2;
+
+            // Get the visual line at the center of the editor viewport
+            var visualLine = textView.GetVisualLineFromVisualTop(editorViewportCenter);
+            if (visualLine?.FirstDocumentLine == null)
             {
-                from = _editorScrollViewer;
-                to = PreviewScrollViewer;
-            }
-            else
-            {
-                from = PreviewScrollViewer;
-                to = _editorScrollViewer;
+                // Fallback: proportional scroll if we can't resolve the line
+                FallbackProportionalSync(_editorScrollViewer, PreviewScrollViewer);
+                return;
             }
 
-            double newX = to.Offset.X;
-            double newY = to.Offset.Y;
+            var centerLine = visualLine.FirstDocumentLine.LineNumber;
 
-            // Vertical sync
-            var fromScrollableH = from.Extent.Height - from.Viewport.Height;
-            var toScrollableH = to.Extent.Height - to.Viewport.Height;
-            if (fromScrollableH > 0 && toScrollableH > 0)
-                newY = (from.Offset.Y / fromScrollableH) * toScrollableH;
+            // Find the preview anchor that contains this line, or the nearest one
+            var targetY = FindPreviewYForLine(centerLine);
 
-            // Horizontal sync
-            var fromScrollableW = from.Extent.Width - from.Viewport.Width;
-            var toScrollableW = to.Extent.Width - to.Viewport.Width;
-            if (fromScrollableW > 0 && toScrollableW > 0)
-                newX = (from.Offset.X / fromScrollableW) * toScrollableW;
+            // Scroll preview so the matching content is at viewport center
+            var previewTargetOffset = targetY - PreviewScrollViewer.Viewport.Height / 2;
 
-            to.Offset = new Vector(newX, newY);
+            // Account for PreviewPanel margin (20px top)
+            previewTargetOffset += 20;
+
+            previewTargetOffset = Math.Max(0, Math.Min(previewTargetOffset,
+                PreviewScrollViewer.Extent.Height - PreviewScrollViewer.Viewport.Height));
+
+            PreviewScrollViewer.Offset = new Vector(PreviewScrollViewer.Offset.X, previewTargetOffset);
         }
         catch (Exception ex)
         {
-            AppLogger.Error("Error syncing scroll", ex);
+            AppLogger.Error("Error syncing editor to preview", ex);
         }
         finally
         {
-            _isSyncingScroll = false;
+            Dispatcher.UIThread.Post(() => _isSyncingScroll = false, DispatcherPriority.Background);
+        }
+    }
+
+    /// <summary>
+    /// Preview scrolled → find which source line is at preview viewport center → scroll editor to match.
+    /// </summary>
+    private void SyncPreviewToEditor()
+    {
+        if (_isSyncingScroll || _editorScrollViewer == null || _scrollAnchors == null || _scrollAnchors.Count == 0)
+            return;
+
+        try
+        {
+            _isSyncingScroll = true;
+
+            // The Y coordinate within the PreviewPanel content that's at viewport center
+            var previewCenterY = PreviewScrollViewer.Offset.Y + PreviewScrollViewer.Viewport.Height / 2;
+            // Subtract PreviewPanel margin
+            previewCenterY -= 20;
+
+            var centerLine = FindLineForPreviewY(previewCenterY);
+            if (centerLine < 1) centerLine = 1;
+
+            var textView = Editor.TextArea.TextView;
+            var totalLines = Editor.Document.LineCount;
+            centerLine = Math.Min(centerLine, totalLines);
+
+            // Get the Y position of that line in the editor
+            var editorY = textView.GetVisualTopByDocumentLine(centerLine);
+
+            // Center it in the editor viewport
+            var editorTargetOffset = editorY - _editorScrollViewer.Viewport.Height / 2;
+            editorTargetOffset = Math.Max(0, Math.Min(editorTargetOffset,
+                _editorScrollViewer.Extent.Height - _editorScrollViewer.Viewport.Height));
+
+            _editorScrollViewer.Offset = new Vector(_editorScrollViewer.Offset.X, editorTargetOffset);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Error("Error syncing preview to editor", ex);
+        }
+        finally
+        {
+            Dispatcher.UIThread.Post(() => _isSyncingScroll = false, DispatcherPriority.Background);
+        }
+    }
+
+    /// <summary>
+    /// Given a source line number, find the Y position within PreviewPanel content
+    /// where that line's content is rendered. Interpolates within blocks.
+    /// </summary>
+    private double FindPreviewYForLine(int line)
+    {
+        var anchors = _scrollAnchors!;
+
+        // Before first anchor
+        if (line <= anchors[0].StartLine)
+            return anchors[0].YOffset;
+
+        // After last anchor
+        if (line >= anchors[^1].EndLine)
+            return anchors[^1].YOffset + anchors[^1].Height;
+
+        // Find the anchor that contains this line
+        for (int i = 0; i < anchors.Count; i++)
+        {
+            var anchor = anchors[i];
+            if (line >= anchor.StartLine && line <= anchor.EndLine)
+            {
+                // Interpolate within the block
+                var lineRange = anchor.EndLine - anchor.StartLine;
+                if (lineRange <= 0) return anchor.YOffset;
+                var fraction = (double)(line - anchor.StartLine) / lineRange;
+                return anchor.YOffset + fraction * anchor.Height;
+            }
+
+            // In a gap between anchors — interpolate between them
+            if (i < anchors.Count - 1 && line > anchor.EndLine && line < anchors[i + 1].StartLine)
+            {
+                var gapStartY = anchor.YOffset + anchor.Height;
+                var gapEndY = anchors[i + 1].YOffset;
+                var gapStartLine = anchor.EndLine;
+                var gapEndLine = anchors[i + 1].StartLine;
+                var gapRange = gapEndLine - gapStartLine;
+                if (gapRange <= 0) return gapStartY;
+                var fraction = (double)(line - gapStartLine) / gapRange;
+                return gapStartY + fraction * (gapEndY - gapStartY);
+            }
+        }
+
+        // Fallback: last anchor
+        return anchors[^1].YOffset + anchors[^1].Height;
+    }
+
+    /// <summary>
+    /// Given a Y position within PreviewPanel content, find the source line number
+    /// that maps to that position. Inverse of FindPreviewYForLine.
+    /// </summary>
+    private int FindLineForPreviewY(double y)
+    {
+        var anchors = _scrollAnchors!;
+
+        // Before first anchor
+        if (y <= anchors[0].YOffset)
+            return anchors[0].StartLine;
+
+        for (int i = 0; i < anchors.Count; i++)
+        {
+            var anchor = anchors[i];
+            var anchorBottom = anchor.YOffset + anchor.Height;
+
+            if (y >= anchor.YOffset && y <= anchorBottom)
+            {
+                // Interpolate within the block
+                if (anchor.Height <= 0) return anchor.StartLine;
+                var fraction = (y - anchor.YOffset) / anchor.Height;
+                var lineRange = anchor.EndLine - anchor.StartLine;
+                return anchor.StartLine + (int)(fraction * lineRange);
+            }
+
+            // In a gap between anchors
+            if (i < anchors.Count - 1 && y > anchorBottom && y < anchors[i + 1].YOffset)
+            {
+                var gapStartY = anchorBottom;
+                var gapEndY = anchors[i + 1].YOffset;
+                var gapHeight = gapEndY - gapStartY;
+                if (gapHeight <= 0) return anchor.EndLine;
+                var fraction = (y - gapStartY) / gapHeight;
+                var gapStartLine = anchor.EndLine;
+                var gapEndLine = anchors[i + 1].StartLine;
+                return gapStartLine + (int)(fraction * (gapEndLine - gapStartLine));
+            }
+        }
+
+        return anchors[^1].EndLine;
+    }
+
+    /// <summary>
+    /// Fallback proportional sync when line mapping isn't available.
+    /// </summary>
+    private void FallbackProportionalSync(ScrollViewer from, ScrollViewer to)
+    {
+        var fromScrollableH = from.Extent.Height - from.Viewport.Height;
+        var toScrollableH = to.Extent.Height - to.Viewport.Height;
+        if (fromScrollableH > 0 && toScrollableH > 0)
+        {
+            var newY = (from.Offset.Y / fromScrollableH) * toScrollableH;
+            to.Offset = new Vector(to.Offset.X, newY);
         }
     }
 
@@ -718,6 +929,9 @@ public partial class MainWindow : Window
 
             foreach (var control in _renderer.Render(markdown))
                 PreviewPanel.Children.Add(control);
+
+            // Rebuild scroll anchors after layout completes
+            Dispatcher.UIThread.Post(RebuildScrollAnchors, DispatcherPriority.Loaded);
         }
         catch (Exception ex)
         {
@@ -740,6 +954,13 @@ public partial class MainWindow : Window
         try
         {
             if (string.IsNullOrWhiteSpace(url)) return;
+
+            // Handle anchor-only links (#section)
+            if (url.StartsWith('#'))
+            {
+                ScrollToAnchor(url[1..]);
+                return;
+            }
 
             // Check if this is a relative .md link (not a full URL)
             if (IsRelativeMarkdownLink(url))
@@ -779,12 +1000,48 @@ public partial class MainWindow : Window
         return pathPart.EndsWith(".md", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Scrolls the preview pane to the control whose Name matches the given anchor ID.
+    /// Optionally pushes the current position onto the back stack for navigation.
+    /// </summary>
+    private void ScrollToAnchor(string anchorId, bool pushToBackStack = true)
+    {
+        if (string.IsNullOrEmpty(anchorId)) return;
+
+        foreach (var child in PreviewPanel.Children)
+        {
+            if (!string.Equals(child.Name, anchorId, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var transform = child.TransformToVisual(PreviewPanel);
+            if (transform == null) continue;
+
+            if (pushToBackStack && DataContext is MainWindowViewModel vm
+                && !string.IsNullOrEmpty(vm.CurrentFilePath))
+            {
+                _backStack.Push(new NavigationEntry(vm.CurrentFilePath, PreviewScrollViewer.Offset.Y));
+                _forwardStack.Clear();
+                UpdateNavigationButtons();
+            }
+
+            var position = transform.Value.Transform(new Point(0, 0));
+            // Account for PreviewPanel margin (20px)
+            var targetY = position.Y + 20;
+            PreviewScrollViewer.Offset = new Vector(PreviewScrollViewer.Offset.X, targetY);
+            return;
+        }
+
+        AppLogger.Warn($"Anchor not found: #{anchorId}");
+    }
+
     private async Task OpenRelativeMarkdownFileAsync(string relativeUrl)
     {
         if (DataContext is not MainWindowViewModel vm) return;
 
-        // Strip fragment
-        var pathPart = relativeUrl.Split('#')[0];
+        // Extract fragment (e.g. "file.md#section" → fragment = "section")
+        var hashIndex = relativeUrl.IndexOf('#');
+        var pathPart = hashIndex >= 0 ? relativeUrl[..hashIndex] : relativeUrl;
+        var fragment = hashIndex >= 0 ? relativeUrl[(hashIndex + 1)..] : null;
 
         // URL-decode (e.g. %20 → space)
         pathPart = Uri.UnescapeDataString(pathPart);
@@ -852,10 +1109,10 @@ public partial class MainWindow : Window
         // Open the linked .md file
         try
         {
-            // Push current file onto back stack before navigating
+            // Push current file and scroll position onto back stack before navigating
             if (!string.IsNullOrEmpty(vm.CurrentFilePath))
             {
-                _backStack.Push(vm.CurrentFilePath);
+                _backStack.Push(new NavigationEntry(vm.CurrentFilePath, PreviewScrollViewer.Offset.Y));
                 _forwardStack.Clear();
                 UpdateNavigationButtons();
             }
@@ -867,6 +1124,12 @@ public partial class MainWindow : Window
             vm.AddToRecentFiles(resolvedPath);
             vm.StatusText = $"Opened: {Path.GetFileName(resolvedPath)}";
             UpdatePreview(content);
+
+            // Scroll to fragment anchor after layout completes
+            if (!string.IsNullOrEmpty(fragment))
+            {
+                Dispatcher.UIThread.Post(() => ScrollToAnchor(fragment, pushToBackStack: false), DispatcherPriority.Loaded);
+            }
         }
         catch (Exception ex)
         {
@@ -906,14 +1169,14 @@ public partial class MainWindow : Window
         {
             _backButton.IsEnabled = _backStack.Count > 0;
             ToolTip.SetTip(_backButton, _backStack.Count > 0
-                ? $"Back to {Path.GetFileName(_backStack.Peek())} (Alt+Left)"
+                ? $"Back to {Path.GetFileName(_backStack.Peek().FilePath)} (Alt+Left)"
                 : "Navigate back (Alt+Left)");
         }
         if (_forwardButton != null)
         {
             _forwardButton.IsEnabled = _forwardStack.Count > 0;
             ToolTip.SetTip(_forwardButton, _forwardStack.Count > 0
-                ? $"Forward to {Path.GetFileName(_forwardStack.Peek())} (Alt+Right)"
+                ? $"Forward to {Path.GetFileName(_forwardStack.Peek().FilePath)} (Alt+Right)"
                 : "Navigate forward (Alt+Right)");
         }
     }
@@ -923,17 +1186,38 @@ public partial class MainWindow : Window
         if (_backStack.Count == 0) return;
         if (DataContext is not MainWindowViewModel vm) return;
 
-        if (vm.IsModified)
+        var target = _backStack.Pop();
+
+        // Push current position onto forward stack
+        if (!string.IsNullOrEmpty(vm.CurrentFilePath))
+            _forwardStack.Push(new NavigationEntry(vm.CurrentFilePath, PreviewScrollViewer.Offset.Y));
+
+        if (string.Equals(target.FilePath, vm.CurrentFilePath, StringComparison.OrdinalIgnoreCase))
         {
-            var canProceed = await vm.HandleUnsavedChangesAsync();
-            if (!canProceed) return;
+            // Same file — just restore scroll position
+            PreviewScrollViewer.Offset = new Vector(PreviewScrollViewer.Offset.X, target.ScrollOffset);
+        }
+        else
+        {
+            if (vm.IsModified)
+            {
+                var canProceed = await vm.HandleUnsavedChangesAsync();
+                if (!canProceed)
+                {
+                    // Undo the stack changes
+                    _forwardStack.Pop();
+                    _backStack.Push(target);
+                    return;
+                }
+            }
+            await NavigateToFileAsync(vm, target.FilePath);
+            // Restore scroll position after layout
+            var scrollY = target.ScrollOffset;
+            Dispatcher.UIThread.Post(() =>
+                PreviewScrollViewer.Offset = new Vector(PreviewScrollViewer.Offset.X, scrollY),
+                DispatcherPriority.Loaded);
         }
 
-        var target = _backStack.Pop();
-        if (!string.IsNullOrEmpty(vm.CurrentFilePath))
-            _forwardStack.Push(vm.CurrentFilePath);
-
-        await NavigateToFileAsync(vm, target);
         UpdateNavigationButtons();
     }
 
@@ -942,17 +1226,35 @@ public partial class MainWindow : Window
         if (_forwardStack.Count == 0) return;
         if (DataContext is not MainWindowViewModel vm) return;
 
-        if (vm.IsModified)
+        var target = _forwardStack.Pop();
+
+        // Push current position onto back stack
+        if (!string.IsNullOrEmpty(vm.CurrentFilePath))
+            _backStack.Push(new NavigationEntry(vm.CurrentFilePath, PreviewScrollViewer.Offset.Y));
+
+        if (string.Equals(target.FilePath, vm.CurrentFilePath, StringComparison.OrdinalIgnoreCase))
         {
-            var canProceed = await vm.HandleUnsavedChangesAsync();
-            if (!canProceed) return;
+            PreviewScrollViewer.Offset = new Vector(PreviewScrollViewer.Offset.X, target.ScrollOffset);
+        }
+        else
+        {
+            if (vm.IsModified)
+            {
+                var canProceed = await vm.HandleUnsavedChangesAsync();
+                if (!canProceed)
+                {
+                    _backStack.Pop();
+                    _forwardStack.Push(target);
+                    return;
+                }
+            }
+            await NavigateToFileAsync(vm, target.FilePath);
+            var scrollY = target.ScrollOffset;
+            Dispatcher.UIThread.Post(() =>
+                PreviewScrollViewer.Offset = new Vector(PreviewScrollViewer.Offset.X, scrollY),
+                DispatcherPriority.Loaded);
         }
 
-        var target = _forwardStack.Pop();
-        if (!string.IsNullOrEmpty(vm.CurrentFilePath))
-            _backStack.Push(vm.CurrentFilePath);
-
-        await NavigateToFileAsync(vm, target);
         UpdateNavigationButtons();
     }
 
