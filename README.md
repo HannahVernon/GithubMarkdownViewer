@@ -10,7 +10,7 @@ Built with [Avalonia UI](https://avaloniaui.net/) and [Markdig](https://github.c
 - **Live split-pane preview** — edit markdown on the left, see rendered output on the right, with synchronized scrolling (vertical and horizontal, bidirectional)
 - **GitHub Flavored Markdown** — tables, task lists, strikethrough, autolinks, fenced code blocks, emoji, footnotes, and more
 - **Dark & light theme support** — preview colors automatically adapt to the system theme using GitHub's color palettes
-- **Word wrap toggle** — toggle text wrapping in the preview pane via View > Word Wrap, including proper wrapping of list items
+- **Word wrap toggle** — toggle text wrapping in the editor via View > Word Wrap; the rendered preview always wraps prose to the pane width, with wide code blocks and tables scrolling horizontally on their own
 - **View modes** — Split View, Editor Only, or Preview Only — remembered across sessions
 
 ### Clickable Links & Navigation
@@ -116,7 +116,7 @@ Mouse back/forward buttons also work for navigation.
 | View     | Split View      | Show both editor and preview panes                       |
 | View     | Editor Only     | Show only the editor pane                                |
 | View     | Preview Only    | Show only the preview pane                               |
-| View     | Word Wrap       | Toggle text wrapping in the preview pane                 |
+| View     | Word Wrap       | Toggle text wrapping in the editor pane                  |
 | Format   | Font...         | Choose font family and size                              |
 | Help     | About...        | Application info, version, and GitHub repository link    |
 
