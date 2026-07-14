@@ -504,7 +504,6 @@ public partial class MainWindow : Window
                 Editor.FontWeight = vm.EditorFontWeight;
                 Editor.TextArea.TextView.SetValue(TextElement.FontWeightProperty, vm.EditorFontWeight);
                 Editor.TextArea.TextView.Redraw();
-                _renderer.SetWordWrap(vm.WordWrap);
                 ApplyWordWrapScrollBehavior(vm.WordWrap);
                 ApplyTheme(vm.ThemeMode);
                 UpdatePreview(vm.MarkdownText);
@@ -861,12 +860,10 @@ public partial class MainWindow : Window
                 UpdatePreview(vm.MarkdownText);
             }
 
-            // Word wrap toggle: update renderer and re-render
+            // Word wrap toggle: affects the editor only (preview always wraps)
             if (e.PropertyName is nameof(MainWindowViewModel.WordWrap))
             {
-                _renderer?.SetWordWrap(vm.WordWrap);
                 ApplyWordWrapScrollBehavior(vm.WordWrap);
-                UpdatePreview(vm.MarkdownText);
                 UpdateViewMenuCheckmarks(vm);
             }
 
@@ -1792,13 +1789,10 @@ public partial class MainWindow : Window
 
     private void ApplyWordWrapScrollBehavior(bool wordWrap)
     {
-        // AvaloniaEdit uses its own WordWrap property
+        // The Word Wrap toggle only affects the editor. The rendered preview
+        // always wraps prose to the pane width; wide code blocks and tables get
+        // their own horizontal scrollbar (see MarkdownToAvaloniaRenderer).
         Editor.WordWrap = wordWrap;
-
-        // When wrapping, disable horizontal scroll so text has a width constraint to wrap against
-        PreviewScrollViewer.HorizontalScrollBarVisibility =
-            wordWrap ? Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled
-                     : Avalonia.Controls.Primitives.ScrollBarVisibility.Auto;
     }
 
     private void ApplyTheme(string themeMode)

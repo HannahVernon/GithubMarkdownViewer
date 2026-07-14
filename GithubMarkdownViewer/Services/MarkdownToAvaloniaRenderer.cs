@@ -4,6 +4,7 @@ using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -87,7 +88,10 @@ public class MarkdownToAvaloniaRenderer
     private FontFamily _monoFont = new("Cascadia Code, Consolas, Menlo, monospace");
     private double _baseFontSize = 13.33; // 10pt in px
     private FontWeight _baseFontWeight = FontWeight.Regular;
-    private TextWrapping _bodyTextWrapping = TextWrapping.Wrap;
+
+    // Rendered Markdown prose always wraps to the preview pane width, matching
+    // GitHub's behavior. Only code blocks and tables scroll horizontally.
+    private const TextWrapping _bodyTextWrapping = TextWrapping.Wrap;
 
     public MarkdownToAvaloniaRenderer(MarkdownPipeline pipeline)
     {
@@ -109,15 +113,6 @@ public class MarkdownToAvaloniaRenderer
         _monoFont = new FontFamily($"{fontFamilyName}, Cascadia Code, Consolas, Menlo, Monaco, Courier New, monospace");
         _baseFontSize = baseFontSizePx;
         _baseFontWeight = baseFontWeight == default ? FontWeight.Regular : baseFontWeight;
-    }
-
-    /// <summary>
-    /// Sets whether body text in the preview wraps or scrolls horizontally.
-    /// Code blocks always use NoWrap regardless of this setting.
-    /// </summary>
-    public void SetWordWrap(bool wrap)
-    {
-        _bodyTextWrapping = wrap ? TextWrapping.Wrap : TextWrapping.NoWrap;
     }
 
     private void ApplyThemePalette()
@@ -322,14 +317,13 @@ public class MarkdownToAvaloniaRenderer
     private Control RenderCodeBlock(LeafBlock codeBlock)
     {
         var text = codeBlock.Lines.ToString().TrimEnd();
-        return new Border
+        var border = new Border
         {
             Background = _codeBackground,
             BorderBrush = _codeBorder,
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(6),
             Padding = new Thickness(16),
-            Margin = new Thickness(0, 0, 0, 12),
             HorizontalAlignment = HorizontalAlignment.Left,
             Child = new SelectableTextBlock
             {
@@ -340,6 +334,16 @@ public class MarkdownToAvaloniaRenderer
                 TextWrapping = TextWrapping.NoWrap,
                 LineHeight = _baseFontSize * 1.45,
             }
+        };
+
+        // Wrap in a horizontal ScrollViewer so long code lines scroll on their
+        // own without forcing the whole preview to scroll horizontally.
+        return new ScrollViewer
+        {
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            Margin = new Thickness(0, 0, 0, 12),
+            Content = border,
         };
     }
 
@@ -497,10 +501,18 @@ public class MarkdownToAvaloniaRenderer
         var wrapper = new Border
         {
             HorizontalAlignment = HorizontalAlignment.Left,
-            Margin = new Thickness(0, 0, 0, 12),
             Child = grid,
         };
-        return wrapper;
+
+        // Wide tables scroll horizontally on their own rather than forcing the
+        // whole preview to scroll.
+        return new ScrollViewer
+        {
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            Margin = new Thickness(0, 0, 0, 12),
+            Content = wrapper,
+        };
     }
 
     private Control RenderHtmlBlock(HtmlBlock htmlBlock)
