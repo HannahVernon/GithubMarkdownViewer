@@ -13,6 +13,7 @@ Built with [Avalonia UI](https://avaloniaui.net/) and [Markdig](https://github.c
 - **Dark & light theme support** — preview colors automatically adapt to the system theme using GitHub's color palettes
 - **Word wrap toggle** — toggle text wrapping in the editor via View > Word Wrap; the rendered preview always wraps prose and table cells to the pane width, with wide code blocks scrolling sideways on their own (Shift+mouse wheel or touchpad)
 - **Select across the whole preview** — drag to select text across paragraphs, lists, tables, and code blocks; double-click selects a word, triple-click a paragraph, and Ctrl+A selects everything; Ctrl+C or Edit > Copy copies plain text (blocks separated by a blank line, table cells by tabs); dragging past the top or bottom edge scrolls
+- **Screen reader support** — the preview is exposed through UI Automation: headings with their levels, paragraphs, list items, table cells, and code blocks are readable elements, and links can be listed and activated by assistive technology
 - **View modes** — Split View, Editor Only, or Preview Only — remembered across sessions
 
 ### Clickable Links & Navigation
@@ -156,6 +157,8 @@ GithubMarkdownViewer/
 │   ├── LayoutEngine.cs                     # Positions blocks into boxes (no UI dependency)
 │   ├── LayoutTypes.cs                      # Boxes, text abstraction, layout result
 │   ├── Selection.cs                        # Hit testing, selection ranges, copied text
+│   ├── AutomationModel.cs                  # Snapshot of blocks, headings, and links for screen readers
+│   ├── Automation.cs                       # UI Automation peers that expose the preview
 │   ├── AvaloniaTextProvider.cs             # Text layout and drawing via Avalonia TextLayout
 │   ├── PreviewStyle.cs                     # Light and dark GitHub palettes
 │   └── MarkdownPreviewControl.cs           # Draws the document; mouse, keyboard, scrolling
