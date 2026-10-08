@@ -1,0 +1,55 @@
+name: Package Check
+
+# Builds the Linux packages on a clean runner and checks that the app inside each one is the full
+# published binary. This runs only when packaging inputs change, so it does not slow other pull requests.
+on:
+  pull_request:
+    branches: [main, dev]
+    paths:
+      - 'installer/**'
+      - 'build-all.ps1'
+      - 'GithubMarkdownViewer/GithubMarkdownViewer.csproj'
+      - '.github/workflows/packages.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  linux-packages:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Install rpm tools
+        run: sudo apt-get update && sudo apt-get install -y rpm
+
+      - name: Publish
+        shell: pwsh
+        run: ./installer/publish.ps1 -Runtime linux-x64 -Version 0.0.1
+
+      - name: Build .deb and .rpm
+        run: |
+          bash installer/linux/build-deb.sh 0.0.1
+          bash installer/linux/build-rpm.sh 0.0.1
+
+      # The app is a .NET single-file bundle. Stripping it (which rpmbuild does by default) removes the
+      # bundled app and runtime, leaving a small file that cannot start.
+      - name: Check each package holds the full published binary
+        run: |
+          expected=$(stat -c %s installer/publish/linux-x64/GithubMarkdownViewer)
+          rpm_size=$(rpm -qplv installer/output/*.rpm | grep 'usr/lib/github-markdown-viewer/GithubMarkdownViewer$' | awk '{print $5}')
+          deb_size=$(dpkg-deb -c installer/output/*.deb | grep 'usr/lib/github-markdown-viewer/GithubMarkdownViewer$' | awk '{print $3}')
+          echo "published binary: $expected bytes"
+          echo "rpm package:      $rpm_size bytes"
+          echo "deb package:      $deb_size bytes"
+          status=0
+          if [ "$rpm_size" != "$expected" ]; then echo "::error::The .rpm does not contain the full published binary"; status=1; fi
+          if [ "$deb_size" != "$expected" ]; then echo "::error::The .deb does not contain the full published binary"; status=1; fi
+          exit $status
