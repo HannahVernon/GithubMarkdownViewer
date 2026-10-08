@@ -44,8 +44,9 @@ jobs:
       - name: Check each package holds the full published binary
         run: |
           expected=$(stat -c %s installer/publish/linux-x64/GithubMarkdownViewer)
-          rpm_size=$(rpm -qplv installer/output/*.rpm | grep 'usr/lib/github-markdown-viewer/GithubMarkdownViewer$' | awk '{print $5}')
-          deb_size=$(dpkg-deb -c installer/output/*.deb | grep 'usr/lib/github-markdown-viewer/GithubMarkdownViewer$' | awk '{print $3}')
+          # Skip the /usr/bin symlink, whose target path also ends with the binary name.
+          rpm_size=$(rpm -qplv installer/output/*.rpm | grep -v -- '->' | grep 'usr/lib/github-markdown-viewer/GithubMarkdownViewer$' | awk '{print $5}')
+          deb_size=$(dpkg-deb -c installer/output/*.deb | grep -v -- '->' | grep 'usr/lib/github-markdown-viewer/GithubMarkdownViewer$' | awk '{print $3}')
           echo "published binary: $expected bytes"
           echo "rpm package:      $rpm_size bytes"
           echo "deb package:      $deb_size bytes"
