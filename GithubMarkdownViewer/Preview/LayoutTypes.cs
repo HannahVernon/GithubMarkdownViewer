@@ -81,6 +81,15 @@ public sealed class FillBox : LayoutBox
     public double CornerRadius { get; init; }
 }
 
+/// <summary>What a text box represents, for assistive technology.</summary>
+public enum BlockKind
+{
+    Text,
+    Heading,
+    Code,
+    TableCell,
+}
+
 public sealed class TextLayoutBox : LayoutBox
 {
     public required IPreviewText Text { get; init; }
@@ -88,6 +97,11 @@ public sealed class TextLayoutBox : LayoutBox
 
     /// <summary>False for list markers, which are not part of the copied text.</summary>
     public bool Selectable { get; init; } = true;
+
+    public BlockKind Kind { get; init; } = BlockKind.Text;
+
+    /// <summary>1 to 6 for headings, otherwise 0.</summary>
+    public int HeadingLevel { get; init; }
 
     /// <summary>Position in <see cref="LayoutResult.TextBoxes"/>. Set for selectable boxes only.</summary>
     public int Index { get; set; } = -1;
