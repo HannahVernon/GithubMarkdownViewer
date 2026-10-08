@@ -65,8 +65,10 @@ pwsh installer/publish.ps1 -Runtime linux-x64
 bash installer/linux/build-deb.sh
 
 # Install
-sudo dpkg -i installer/output/github-markdown-viewer_1.0.0_amd64.deb
+sudo dpkg -i installer/output/github-markdown-viewer_<version>_amd64.deb
 ```
+
+The version comes from the first argument if you pass one (`bash installer/linux/build-deb.sh 1.2.3`), otherwise from the `APP_VERSION` environment variable, otherwise from `<Version>` in the csproj. The `.rpm` and `.dmg` scripts work the same way.
 
 ### Linux .rpm Package
 
@@ -77,7 +79,7 @@ sudo dpkg -i installer/output/github-markdown-viewer_1.0.0_amd64.deb
 bash installer/linux/build-rpm.sh
 
 # Install
-sudo rpm -i installer/output/github-markdown-viewer-1.0.0-1*.rpm
+sudo rpm -i installer/output/github-markdown-viewer-<version>-1*.rpm
 ```
 
 ### macOS .app Bundle + .dmg
@@ -105,9 +107,9 @@ export CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)"
 bash installer/macos/build-dmg.sh
 
 # Notarize for Gatekeeper
-xcrun notarytool submit installer/output/GithubMarkdownViewer-1.0.0-osx-x64.dmg \
+xcrun notarytool submit installer/output/GithubMarkdownViewer-<version>-osx-x64.dmg \
     --apple-id YOUR_APPLE_ID --team-id YOUR_TEAM_ID --wait
-xcrun stapler staple installer/output/GithubMarkdownViewer-1.0.0-osx-x64.dmg
+xcrun stapler staple installer/output/GithubMarkdownViewer-<version>-osx-x64.dmg
 ```
 
 > **Note:** Without code signing, macOS users will see Gatekeeper warnings. The build script will print a reminder if `CODESIGN_IDENTITY` is not set.
@@ -121,11 +123,11 @@ All installer artifacts are written to `installer/output/`:
 | `GithubMarkdownViewer-<version>-win-x64-setup.exe` | Windows | Inno Setup installer |
 | `GithubMarkdownViewer-<version>-win-x64-portable.zip` | Windows | Portable (no install) |
 | `GithubMarkdownViewer-<version>-linux-x64.tar.gz` | Linux | Portable tarball |
-| `github-markdown-viewer_1.0.0_amd64.deb` | Linux | Debian package |
-| `github-markdown-viewer-1.0.0-1.x86_64.rpm` | Linux | RPM package |
-| `GithubMarkdownViewer-1.0.0-osx-x64.dmg` | macOS | Disk image |
+| `github-markdown-viewer_<version>_amd64.deb` | Linux | Debian package |
+| `github-markdown-viewer-<version>-1.x86_64.rpm` | Linux | RPM package |
+| `GithubMarkdownViewer-<version>-osx-x64.dmg` | macOS | Disk image |
 
-`<version>` is the `<Version>` value in the csproj. The `.deb`, `.rpm`, and `.dmg` scripts still use a fixed `1.0.0` in their file names.
+`<version>` is the `<Version>` value in the csproj, unless you pass a version to the Linux or macOS scripts.
 
 ## Directory Structure
 

@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Build an RPM package for GitHub Markdown Viewer
-# Usage: ./build-rpm.sh
+# Usage: ./build-rpm.sh [version]
+#   The version is the first argument, else the APP_VERSION environment variable,
+#   else <Version> from GithubMarkdownViewer/GithubMarkdownViewer.csproj.
 # Prerequisites:
 #   - Run publish.ps1 -Runtime linux-x64 first
 #   - rpm-build package installed (sudo dnf install rpm-build)
@@ -10,7 +12,6 @@ umask 077
 
 APP_NAME="github-markdown-viewer"
 APP_DISPLAY_NAME="GitHub Markdown Viewer"
-APP_VERSION="1.0.0"
 APP_RELEASE="1"
 APP_MAINTAINER="Hannah Vernon"
 APP_DESCRIPTION="A cross-platform Markdown viewer and editor with GitHub Flavored Markdown support"
@@ -18,6 +19,13 @@ APP_URL="https://github.com/HannahVernon/GithubMarkdownViewer"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+APP_VERSION="${1:-${APP_VERSION:-$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' "$REPO_ROOT/GithubMarkdownViewer/GithubMarkdownViewer.csproj" | head -n 1)}}"
+if ! [[ "$APP_VERSION" =~ ^[0-9]+(\.[0-9]+){1,3}$ ]]; then
+    echo "ERROR: Invalid or missing version '$APP_VERSION'. Pass it as the first argument, for example 1.2.3."
+    exit 1
+fi
+
 PUBLISH_DIR="$REPO_ROOT/installer/publish/linux-x64"
 OUTPUT_DIR="$REPO_ROOT/installer/output"
 
