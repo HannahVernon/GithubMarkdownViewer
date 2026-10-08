@@ -20,7 +20,7 @@ build.cmd
 build.cmd all
 ```
 
-`build.cmd` runs `build-all.ps1` in the repo root. It reads the version from `<Version>` in `GithubMarkdownViewer\GithubMarkdownViewer.csproj` and uses it in the installer and archive file names.
+`build.cmd` runs `build-all.ps1` in the repo root. It reads the version from `<Version>` in `GithubMarkdownViewer\GithubMarkdownViewer.csproj` and uses it in the installer and archive file names. To build a different version, run `build-all.ps1 -Runtime win-x64 -Version 1.2.3`.
 
 `build.cmd` (win-x64 only) will:
 1. Publish a self-contained Windows binary
@@ -127,7 +127,22 @@ All installer artifacts are written to `installer/output/`:
 | `github-markdown-viewer-<version>-1.x86_64.rpm` | Linux | RPM package |
 | `GithubMarkdownViewer-<version>-osx-x64.dmg` | macOS | Disk image |
 
-`<version>` is the `<Version>` value in the csproj, unless you pass a version to the Linux or macOS scripts.
+`<version>` is the `<Version>` value in the csproj, unless you pass a version to the build scripts. `build-all.ps1 -Version 1.2.3` and `publish.ps1 -Version 1.2.3` build that version into the app and the file names, and the Linux and macOS scripts take it as their first argument.
+
+## Release files (GitHub Actions)
+
+When a pull request is merged into `main`, the **Version Bump** workflow tags the merge (`vX.Y.Z`) and the **Build and Release** workflow (`.github/workflows/build-release.yml`) creates the GitHub release. It then builds each platform from the tagged source and attaches the files, using the tag's version:
+
+| Job | Runner | Files attached |
+|-----|--------|----------------|
+| `windows` | `windows-latest` (Inno Setup is preinstalled) | `GithubMarkdownViewer-<version>-win-x64-setup.exe`, `...-win-x64-portable.zip` |
+| `linux` | `ubuntu-latest` | `...-linux-x64.tar.gz`, `github-markdown-viewer_<version>_amd64.deb`, `github-markdown-viewer-<version>-1.x86_64.rpm` |
+| `macos` | `macos-latest` | `GithubMarkdownViewer-<version>-osx-x64.dmg` |
+| `checksums` | `ubuntu-latest` | `SHA256SUMS.txt` for all of the above |
+
+The platform jobs run independently, so one failing platform does not stop the others. The `.dmg` is not signed or notarized, so macOS shows a Gatekeeper warning on first open.
+
+To build or rebuild the files for an existing tag, run the **Build and Release** workflow from the Actions tab (**Run workflow**) and enter the tag, for example `v1.6.35`. Leave it empty to use the latest tag. This needs the workflow file to be on the default branch.
 
 ## Directory Structure
 

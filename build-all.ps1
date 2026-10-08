@@ -5,30 +5,39 @@
     1. Publishes self-contained binaries for win-x64, linux-x64, osx-x64
     2. Builds Windows installer with Inno Setup (if iscc is available)
     3. Shows instructions for Linux and macOS packaging (must be run on those platforms)
-    The installer version comes from <Version> in GithubMarkdownViewer.csproj.
+    The installer version comes from <Version> in GithubMarkdownViewer.csproj unless -Version is given.
     Usually run through build.cmd in the repo root.
 .PARAMETER SkipPublish
     Skip the dotnet publish step (use existing publish output).
 .PARAMETER Runtime
     Optional: build a single runtime identifier (for example, win-x64). Defaults to all three.
+.PARAMETER Version
+    Optional: version to build into the app and the file names, for example 1.6.35. Release builds pass the tag's version.
 #>
 param(
     [switch]$SkipPublish,
-    [string]$Runtime = ""
+    [string]$Runtime = "",
+    [string]$Version = ""
 )
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = $PSScriptRoot
 $InstallerDir = Join-Path $RepoRoot "installer"
 
-# Read the app version from the csproj so installer names and Inno Setup match the app
-$csprojPath = Join-Path (Join-Path $RepoRoot "GithubMarkdownViewer") "GithubMarkdownViewer.csproj"
-$versionMatch = Select-String -Path $csprojPath -Pattern '<Version>([^<]+)</Version>' | Select-Object -First 1
-if (-not $versionMatch) {
-    Write-Error "Could not read <Version> from $csprojPath"
+if ($Version -eq "") {
+    # Read the app version from the csproj so installer names and Inno Setup match the app
+    $csprojPath = Join-Path (Join-Path $RepoRoot "GithubMarkdownViewer") "GithubMarkdownViewer.csproj"
+    $versionMatch = Select-String -Path $csprojPath -Pattern '<Version>([^<]+)</Version>' | Select-Object -First 1
+    if (-not $versionMatch) {
+        Write-Error "Could not read <Version> from $csprojPath"
+        exit 1
+    }
+    $Version = $versionMatch.Matches[0].Groups[1].Value
+}
+if ($Version -notmatch '^\d+(\.\d+){1,3}$') {
+    Write-Error "Invalid version '$Version'. Use a numeric version such as 1.2.3."
     exit 1
 }
-$Version = $versionMatch.Matches[0].Groups[1].Value
 
 $buildWindows = ($Runtime -eq "") -or ($Runtime -eq "win-x64")
 $buildLinux   = ($Runtime -eq "") -or ($Runtime -eq "linux-x64")
@@ -45,7 +54,7 @@ Write-Host ""
 # Step 1: Publish
 if (-not $SkipPublish) {
     Write-Host "--- Step 1: Publishing binaries ---" -ForegroundColor Yellow
-    & (Join-Path $InstallerDir "publish.ps1") -Runtime $Runtime
+    & (Join-Path $InstallerDir "publish.ps1") -Runtime $Runtime -Version $Version
     if ($LASTEXITCODE -ne 0) { exit 1 }
     Write-Host ""
 } else {

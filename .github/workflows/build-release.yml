@@ -4,14 +4,23 @@ on:
   workflow_run:
     workflows: ["Version Bump"]
     types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing version tag to build and attach files to, for example v1.6.35. Leave empty for the latest tag."
+        required: false
+        type: string
 
 permissions:
   contents: write
 
 jobs:
   release:
-    if: github.event.workflow_run.conclusion == 'success'
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      version: ${{ steps.tag.outputs.version }}
 
     steps:
       - name: Checkout
@@ -19,13 +28,19 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Find latest version tag
+      - name: Find version tag
         id: tag
+        env:
+          REQUESTED_TAG: ${{ inputs.tag }}
         run: |
           git fetch --tags
-          tag=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1)
+          tag="$REQUESTED_TAG"
           if [ -z "$tag" ]; then
-            echo "::error::No version tag found"
+            tag=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1)
+          fi
+          # The tag becomes part of file names and script arguments, so accept only vX.Y.Z that exists.
+          if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || ! git rev-parse -q --verify "refs/tags/$tag" > /dev/null; then
+            echo "::error::No valid version tag found (got '$tag')"
             exit 1
           fi
           version="${tag#v}"
@@ -39,3 +54,143 @@ jobs:
           tag_name: ${{ steps.tag.outputs.tag }}
           name: "Release ${{ steps.tag.outputs.tag }}"
           generate_release_notes: true
+
+  # The release exists once the job above succeeds. Each job below builds one platform from the
+  # tagged source and attaches the files to it, so a failure on one platform does not stop the others.
+  windows:
+    needs: release
+    runs-on: windows-latest
+    env:
+      TAG: ${{ needs.release.outputs.tag }}
+      VERSION: ${{ needs.release.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.tag }}
+
+      - name: Setup .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      # Inno Setup is preinstalled on the Windows runners. Without it the script builds a zip instead.
+      - name: Build installer
+        shell: pwsh
+        run: ./build-all.ps1 -Runtime win-x64 -Version $env:VERSION
+
+      - name: Make portable zip
+        shell: pwsh
+        run: Compress-Archive -Path installer/publish/win-x64/* -DestinationPath "installer/output/GithubMarkdownViewer-$env:VERSION-win-x64-portable.zip" -Force
+
+      - name: Attach to release
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem "installer/output/GithubMarkdownViewer-$env:VERSION-win-x64-*" | ForEach-Object { $_.FullName }
+          gh release upload $env:TAG @files --clobber
+
+  linux:
+    needs: release
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ needs.release.outputs.tag }}
+      VERSION: ${{ needs.release.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.tag }}
+
+      - name: Setup .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Install rpm tools
+        run: sudo apt-get update && sudo apt-get install -y rpm
+
+      - name: Publish and make tarball
+        shell: pwsh
+        run: ./build-all.ps1 -Runtime linux-x64 -Version $env:VERSION
+
+      - name: Build .deb
+        run: bash installer/linux/build-deb.sh "$VERSION"
+
+      - name: Build .rpm
+        run: bash installer/linux/build-rpm.sh "$VERSION"
+
+      # Attach whatever was built, even if the .rpm step failed, so one problem does not hide the rest.
+      - name: Attach to release
+        if: ${{ !cancelled() }}
+        run: |
+          shopt -s nullglob
+          files=(installer/output/*)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::error::Nothing to attach"
+            exit 1
+          fi
+          gh release upload "$TAG" "${files[@]}" --clobber
+
+  macos:
+    needs: release
+    runs-on: macos-latest
+    env:
+      TAG: ${{ needs.release.outputs.tag }}
+      VERSION: ${{ needs.release.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.tag }}
+
+      - name: Setup .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Publish
+        shell: pwsh
+        run: ./build-all.ps1 -Runtime osx-x64 -Version $env:VERSION
+
+      # The disk image is not signed or notarized, so macOS shows a Gatekeeper warning on first open.
+      - name: Build .dmg
+        run: bash installer/macos/build-dmg.sh "$VERSION"
+
+      - name: Attach to release
+        run: |
+          shopt -s nullglob
+          files=(installer/output/*)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::error::Nothing to attach"
+            exit 1
+          fi
+          gh release upload "$TAG" "${files[@]}" --clobber
+
+  checksums:
+    needs: [release, windows, linux, macos]
+    if: ${{ !cancelled() && needs.release.result == 'success' }}
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ needs.release.outputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+
+    steps:
+      - name: Write SHA256SUMS.txt for the attached files
+        run: |
+          mkdir assets
+          gh release download "$TAG" --dir assets --pattern 'GithubMarkdownViewer-*' --pattern 'github-markdown-viewer*' --clobber
+          cd assets
+          if ! ls * > /dev/null 2>&1; then
+            echo "::error::No files are attached to $TAG"
+            exit 1
+          fi
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          gh release upload "$TAG" SHA256SUMS.txt --clobber
