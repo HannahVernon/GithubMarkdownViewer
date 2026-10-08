@@ -6,7 +6,9 @@
 # Prerequisites: Run publish.ps1 -Runtime linux-x64 first (or use dotnet publish)
 
 set -euo pipefail
-umask 077
+# Standard permissions: dpkg-deb rejects a 0700 control directory, and a package built with a
+# restrictive umask would install files that other users cannot read or run.
+umask 022
 
 APP_NAME="github-markdown-viewer"
 APP_DISPLAY_NAME="GitHub Markdown Viewer"

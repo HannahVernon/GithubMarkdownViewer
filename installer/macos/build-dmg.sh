@@ -6,7 +6,9 @@
 # Prerequisites: Run publish.ps1 -Runtime osx-x64 first (or dotnet publish)
 
 set -euo pipefail
-umask 077
+# Standard permissions: an app bundle built with a restrictive umask would not be usable by
+# other users once the disk image is mounted.
+umask 022
 
 APP_NAME="GitHub Markdown Viewer"
 APP_BUNDLE_ID="com.hannahvernon.githubmarkdownviewer"
