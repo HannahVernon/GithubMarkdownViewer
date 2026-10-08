@@ -161,7 +161,7 @@
                         <TextBlock Text="PREVIEW" FontSize="11" FontWeight="SemiBold" Foreground="#656d76" />
                     </Border>
                     <ScrollViewer Name="PreviewScrollViewer"
-                                HorizontalScrollBarVisibility="Auto"
+                                HorizontalScrollBarVisibility="Disabled"
                                 VerticalScrollBarVisibility="Auto">
                         <StackPanel Name="PreviewPanel" Margin="20" Spacing="0" />
                     </ScrollViewer>

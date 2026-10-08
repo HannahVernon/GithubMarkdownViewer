@@ -9,13 +9,16 @@ Built with [Avalonia UI](https://avaloniaui.net/) and [Markdig](https://github.c
 ### Editing & Preview
 - **Live split-pane preview** — edit markdown on the left, see rendered output on the right, with synchronized scrolling (vertical and horizontal, bidirectional)
 - **GitHub Flavored Markdown** — tables, task lists, strikethrough, autolinks, fenced code blocks, emoji, footnotes, and more
+- **YAML front matter** — a leading `---` metadata block is hidden in the preview, matching GitHub's behavior
 - **Dark & light theme support** — preview colors automatically adapt to the system theme using GitHub's color palettes
-- **Word wrap toggle** — toggle text wrapping in the preview pane via View > Word Wrap, including proper wrapping of list items
+- **Word wrap toggle** — toggle text wrapping in the editor via View > Word Wrap; the rendered preview always wraps prose to the pane width, with wide code blocks and tables scrolling horizontally on their own
 - **View modes** — Split View, Editor Only, or Preview Only — remembered across sessions
 
 ### Clickable Links & Navigation
 - **Clickable `.md` links** — relative markdown links in the preview pane open the linked file in the editor
-- **Back / Forward navigation** — browser-style history when navigating between `.md` files, with toolbar buttons, keyboard shortcuts (Alt+Left / Alt+Right), and mouse back/forward button support
+- **Anchor links** — `#heading` links scroll to the matching heading within the current document; `file.md#heading` links navigate to the file and then scroll to the heading
+- **GitHub-compatible heading IDs** — heading anchors are generated using GitHub's algorithm (preserves leading numbers, converts em dashes to hyphens)
+- **Back / Forward navigation** — browser-style history with scroll-position restoration, supporting toolbar buttons, keyboard shortcuts (Alt+Left / Alt+Right), and mouse back/forward buttons; anchor jumps within the same file are also added to the history stack
 - **External links** — `http` / `https` links open in the default browser
 - **Link tooltips** — hover over any link to see the full URL
 
@@ -25,6 +28,7 @@ Built with [Avalonia UI](https://avaloniaui.net/) and [Markdig](https://github.c
 - **Auto-reopen** — automatically reopens the last document on startup
 - **Command-line argument** — open a `.md` file by passing its path as an argument (supports double-click from shell)
 - **Unsaved changes protection** — prompts to Save / Don't Save / Cancel before closing or opening a new file
+- **External change detection** — when the open file changes on disk, it reloads automatically and keeps your scroll and caret position; if you also have unsaved edits, the app asks before discarding them
 - **HTML export** — exports as standalone HTML with GitHub-style CSS, with raw HTML sanitized to prevent XSS
 
 ### Customization & Persistence
@@ -85,6 +89,14 @@ dotnet run --project GithubMarkdownViewer
 dotnet run --project GithubMarkdownViewer -- path/to/file.md
 ```
 
+### Building an installer (Windows)
+
+```cmd
+build.cmd
+```
+
+This publishes the win-x64 binaries and creates `installer\output\GithubMarkdownViewer-<version>-win-x64-setup.exe`. The version comes from `<Version>` in `GithubMarkdownViewer\GithubMarkdownViewer.csproj`. [Inno Setup 6](https://jrsoftware.org/isinfo.php) is optional; without it, the build creates a portable ZIP instead. Run `build.cmd all` to also publish the Linux and macOS binaries. See [installer/README.md](installer/README.md) for details.
+
 ## Keyboard Shortcuts
 
 | Shortcut          | Action              |
@@ -114,7 +126,7 @@ Mouse back/forward buttons also work for navigation.
 | View     | Split View      | Show both editor and preview panes                       |
 | View     | Editor Only     | Show only the editor pane                                |
 | View     | Preview Only    | Show only the preview pane                               |
-| View     | Word Wrap       | Toggle text wrapping in the preview pane                 |
+| View     | Word Wrap       | Toggle text wrapping in the editor pane                  |
 | Format   | Font...         | Choose font family and size                              |
 | Help     | About...        | Application info, version, and GitHub repository link    |
 

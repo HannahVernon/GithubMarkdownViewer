@@ -99,6 +99,7 @@ public class MarkdownService
     private static MarkdownPipeline BuildPipeline(bool disableHtml)
     {
         var builder = new MarkdownPipelineBuilder()
+            .UseYamlFrontMatter()
             .UseEmojiAndSmiley(enableSmileys: false)
             .UseAutoLinks()
             .UseTaskLists()
