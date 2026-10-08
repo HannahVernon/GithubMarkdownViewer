@@ -100,7 +100,8 @@ public sealed class LayoutEngine
     };
 
     private TextLayoutBox AddText(Pass pass, RichText source, TextRole role, double x, double y, double width,
-        double maxWidth, TextAlign align = TextAlign.Left, bool selectable = true, string separator = "\n\n")
+        double maxWidth, TextAlign align = TextAlign.Left, bool selectable = true, string separator = "\n\n",
+        BlockKind kind = BlockKind.Text, int headingLevel = 0)
     {
         var text = _text.Create(source, role, maxWidth, align);
         var box = new TextLayoutBox
@@ -108,6 +109,8 @@ public sealed class LayoutEngine
             Text = text,
             Source = source,
             Selectable = selectable,
+            Kind = kind,
+            HeadingLevel = headingLevel,
             SeparatorBefore = selectable ? TakeSeparator(pass, separator) : separator,
             Bounds = new Rect(x, y, width, text.Height),
         };
@@ -131,7 +134,8 @@ public sealed class LayoutEngine
 
         if (level <= 2)
         {
-            var box = AddText(pass, heading.Text, role, x, top + 16, width, width, separator: Separator(context));
+            var box = AddText(pass, heading.Text, role, x, top + 16, width, width, separator: Separator(context),
+                kind: BlockKind.Heading, headingLevel: level);
             var lineY = box.Bounds.Bottom + 8 + 6;
             pass.Boxes.Add(new FillBox
             {
@@ -141,7 +145,8 @@ public sealed class LayoutEngine
             return new Placed(top, lineY + 1, lineY + 1 + 8);
         }
 
-        var text = AddText(pass, heading.Text, role, x, top, width, width, separator: Separator(context));
+        var text = AddText(pass, heading.Text, role, x, top, width, width, separator: Separator(context),
+            kind: BlockKind.Heading, headingLevel: level);
         return new Placed(top, text.Bounds.Bottom, text.Bounds.Bottom + 8);
     }
 
@@ -169,6 +174,7 @@ public sealed class LayoutEngine
         {
             Text = text,
             Source = source,
+            Kind = BlockKind.Code,
             SeparatorBefore = TakeSeparator(pass, Separator(context)),
             Index = pass.TextBoxes.Count,
             Bounds = new Rect(x + CodeBlockBox.Padding, y + CodeBlockBox.Padding, text.Width, text.Height),
@@ -337,6 +343,7 @@ public sealed class LayoutEngine
                 {
                     Text = texts[c],
                     Source = c < row.Cells.Count ? row.Cells[c].Text : RichText.Empty,
+                    Kind = BlockKind.TableCell,
                     SeparatorBefore = separator,
                     Index = pass.TextBoxes.Count,
                     Bounds = new Rect(cellX + TableCellPadX, cursor + TableCellPadY, contentWidths[c], texts[c].Height),

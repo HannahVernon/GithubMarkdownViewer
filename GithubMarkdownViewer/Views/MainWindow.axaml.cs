@@ -91,7 +91,7 @@ public partial class MainWindow : Window
         StopFileWatcher();
 
         PreviewSurface.LinkClicked -= OnRendererLinkClicked;
-        PreviewSurface.LayoutUpdated -= RebuildScrollAnchors;
+        PreviewSurface.DocumentLayoutChanged -= RebuildScrollAnchors;
 
         Editor.TextChanged -= OnEditorTextChanged;
 
@@ -403,7 +403,7 @@ public partial class MainWindow : Window
             {
                 _markdownPipeline = new MarkdownService().Pipeline;
                 PreviewSurface.LinkClicked += OnRendererLinkClicked;
-                PreviewSurface.LayoutUpdated += RebuildScrollAnchors;
+                PreviewSurface.DocumentLayoutChanged += RebuildScrollAnchors;
 
                 vm.OpenFileDialog = OpenFileDialogAsync;
                 vm.SaveFileDialog = SaveFileDialogAsync;

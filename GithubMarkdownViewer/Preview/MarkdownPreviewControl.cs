@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Avalonia;
+using Avalonia.Automation.Peers;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
@@ -52,7 +53,7 @@ public sealed class MarkdownPreviewControl : Control
     public event Action<string>? LinkClicked;
 
     /// <summary>Raised when the layout is recomputed (new text, width, font, or theme). Positions in <see cref="CurrentLayout"/> have changed.</summary>
-    public event Action? LayoutUpdated;
+    public event Action? DocumentLayoutChanged;
 
     public LayoutResult? CurrentLayout => _layout;
 
@@ -124,7 +125,7 @@ public sealed class MarkdownPreviewControl : Control
         if (_hasSelection && (_anchor.Box >= _layout.TextBoxes.Count || _caret.Box >= _layout.TextBoxes.Count))
             ClearSelection();
 
-        LayoutUpdated?.Invoke();
+        DocumentLayoutChanged?.Invoke();
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
@@ -160,13 +161,32 @@ public sealed class MarkdownPreviewControl : Control
         InvalidateVisual();
     }
 
-    private Rect VisibleRect()
+    private Rect VisibleRect(double inflate = 32)
     {
         if (_scrollViewer == null) return new Rect(Bounds.Size);
         var offset = _scrollViewer.Offset;
         var viewport = _scrollViewer.Viewport;
-        return new Rect(offset.X, offset.Y, viewport.Width, viewport.Height).Inflate(32);
+        return new Rect(offset.X, offset.Y, viewport.Width, viewport.Height).Inflate(inflate);
     }
+
+    // ── Accessibility ─────────────────────────────────────────────
+
+    protected override AutomationPeer OnCreateAutomationPeer() => new MarkdownPreviewAutomationPeer(this);
+
+    /// <summary>Converts a rectangle in content coordinates to the window's coordinate space, as automation expects.</summary>
+    internal Rect ContentRectToRoot(Rect contentRect)
+    {
+        if (this.GetVisualRoot() is not Visual root) return default;
+        var transform = this.TransformToVisual(root);
+        return transform == null ? default : Shift(contentRect).TransformToAABB(transform.Value);
+    }
+
+    internal bool IsContentRectVisible(Rect contentRect) => Shift(contentRect).Intersects(VisibleRect(0));
+
+    internal void BringContentRectIntoView(Rect contentRect) => this.BringIntoView(Shift(contentRect));
+
+    /// <summary>Follows a link as if it had been clicked.</summary>
+    internal void ActivateLink(string url) => LinkClicked?.Invoke(url);
 
     private static Rect Shift(Rect rect) => rect.Translate(new Vector(ContentPadding, ContentPadding));
 

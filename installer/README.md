@@ -20,7 +20,7 @@ build.cmd
 build.cmd all
 ```
 
-`build.cmd` runs `build-all.ps1` in the repo root. It reads the version from `<Version>` in `GithubMarkdownViewer\GithubMarkdownViewer.csproj` and uses it in the installer and archive file names.
+`build.cmd` runs `build-all.ps1` in the repo root. It reads the version from `<Version>` in `GithubMarkdownViewer\GithubMarkdownViewer.csproj` and uses it in the installer and archive file names. To build a different version, run `build-all.ps1 -Runtime win-x64 -Version 1.2.3`.
 
 `build.cmd` (win-x64 only) will:
 1. Publish a self-contained Windows binary
@@ -65,8 +65,10 @@ pwsh installer/publish.ps1 -Runtime linux-x64
 bash installer/linux/build-deb.sh
 
 # Install
-sudo dpkg -i installer/output/github-markdown-viewer_1.0.0_amd64.deb
+sudo dpkg -i installer/output/github-markdown-viewer_<version>_amd64.deb
 ```
+
+The version comes from the first argument if you pass one (`bash installer/linux/build-deb.sh 1.2.3`), otherwise from the `APP_VERSION` environment variable, otherwise from `<Version>` in the csproj. The `.rpm` and `.dmg` scripts work the same way.
 
 ### Linux .rpm Package
 
@@ -77,7 +79,7 @@ sudo dpkg -i installer/output/github-markdown-viewer_1.0.0_amd64.deb
 bash installer/linux/build-rpm.sh
 
 # Install
-sudo rpm -i installer/output/github-markdown-viewer-1.0.0-1*.rpm
+sudo rpm -i installer/output/github-markdown-viewer-<version>-1*.rpm
 ```
 
 ### macOS .app Bundle + .dmg
@@ -105,9 +107,9 @@ export CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)"
 bash installer/macos/build-dmg.sh
 
 # Notarize for Gatekeeper
-xcrun notarytool submit installer/output/GithubMarkdownViewer-1.0.0-osx-x64.dmg \
+xcrun notarytool submit installer/output/GithubMarkdownViewer-<version>-osx-x64.dmg \
     --apple-id YOUR_APPLE_ID --team-id YOUR_TEAM_ID --wait
-xcrun stapler staple installer/output/GithubMarkdownViewer-1.0.0-osx-x64.dmg
+xcrun stapler staple installer/output/GithubMarkdownViewer-<version>-osx-x64.dmg
 ```
 
 > **Note:** Without code signing, macOS users will see Gatekeeper warnings. The build script will print a reminder if `CODESIGN_IDENTITY` is not set.
@@ -121,11 +123,26 @@ All installer artifacts are written to `installer/output/`:
 | `GithubMarkdownViewer-<version>-win-x64-setup.exe` | Windows | Inno Setup installer |
 | `GithubMarkdownViewer-<version>-win-x64-portable.zip` | Windows | Portable (no install) |
 | `GithubMarkdownViewer-<version>-linux-x64.tar.gz` | Linux | Portable tarball |
-| `github-markdown-viewer_1.0.0_amd64.deb` | Linux | Debian package |
-| `github-markdown-viewer-1.0.0-1.x86_64.rpm` | Linux | RPM package |
-| `GithubMarkdownViewer-1.0.0-osx-x64.dmg` | macOS | Disk image |
+| `github-markdown-viewer_<version>_amd64.deb` | Linux | Debian package |
+| `github-markdown-viewer-<version>-1.x86_64.rpm` | Linux | RPM package |
+| `GithubMarkdownViewer-<version>-osx-x64.dmg` | macOS | Disk image |
 
-`<version>` is the `<Version>` value in the csproj. The `.deb`, `.rpm`, and `.dmg` scripts still use a fixed `1.0.0` in their file names.
+`<version>` is the `<Version>` value in the csproj, unless you pass a version to the build scripts. `build-all.ps1 -Version 1.2.3` and `publish.ps1 -Version 1.2.3` build that version into the app and the file names, and the Linux and macOS scripts take it as their first argument.
+
+## Release files (GitHub Actions)
+
+When a pull request is merged into `main`, the **Version Bump** workflow tags the merge (`vX.Y.Z`) and the **Build and Release** workflow (`.github/workflows/build-release.yml`) creates the GitHub release. It then builds each platform from the tagged source and attaches the files, using the tag's version:
+
+| Job | Runner | Files attached |
+|-----|--------|----------------|
+| `windows` | `windows-latest` (Inno Setup is preinstalled) | `GithubMarkdownViewer-<version>-win-x64-setup.exe`, `...-win-x64-portable.zip` |
+| `linux` | `ubuntu-latest` | `...-linux-x64.tar.gz`, `github-markdown-viewer_<version>_amd64.deb`, `github-markdown-viewer-<version>-1.x86_64.rpm` |
+| `macos` | `macos-latest` | `GithubMarkdownViewer-<version>-osx-x64.dmg` |
+| `checksums` | `ubuntu-latest` | `SHA256SUMS.txt` for all of the above |
+
+The platform jobs run independently, so one failing platform does not stop the others. The `.dmg` is not signed or notarized, so macOS shows a Gatekeeper warning on first open.
+
+To build or rebuild the files for an existing tag, run the **Build and Release** workflow from the Actions tab (**Run workflow**) and enter the tag, for example `v1.6.35`. Leave it empty to use the latest tag. This needs the workflow file to be on the default branch.
 
 ## Directory Structure
 
