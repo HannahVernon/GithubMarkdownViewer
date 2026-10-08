@@ -917,10 +917,26 @@ public partial class MainWindow : Window
         };
     }
 
+    // Temporary switch while the single-surface renderer is developed: set GMV_PREVIEW=custom.
+    private static readonly bool UseCustomPreview =
+        string.Equals(Environment.GetEnvironmentVariable("GMV_PREVIEW"), "custom", StringComparison.OrdinalIgnoreCase);
+
+    private Markdig.MarkdownPipeline? _customPipeline;
+
     private void UpdatePreview(string markdown)
     {
         try
         {
+            if (UseCustomPreview && DataContext is MainWindowViewModel customVm)
+            {
+                _customPipeline ??= new MarkdownService().Pipeline;
+                PreviewPanel.IsVisible = false;
+                CustomPreview.IsVisible = true;
+                CustomPreview.Configure(customVm.FontFamilyName, customVm.FontSizePx, customVm.EditorFontWeight);
+                CustomPreview.SetMarkdown(markdown ?? "", _customPipeline);
+                return;
+            }
+
             PreviewPanel.Children.Clear();
             if (_renderer == null || string.IsNullOrEmpty(markdown)) return;
 
