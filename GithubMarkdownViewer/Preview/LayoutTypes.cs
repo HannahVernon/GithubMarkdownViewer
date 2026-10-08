@@ -88,6 +88,15 @@ public sealed class TextLayoutBox : LayoutBox
 
     /// <summary>False for list markers, which are not part of the copied text.</summary>
     public bool Selectable { get; init; } = true;
+
+    /// <summary>Position in <see cref="LayoutResult.TextBoxes"/>. Set for selectable boxes only.</summary>
+    public int Index { get; set; } = -1;
+
+    /// <summary>Text inserted before this box when copying a range that includes the previous box.</summary>
+    public string SeparatorBefore { get; init; } = "\n\n";
+
+    /// <summary>The code block that scrolls this text sideways, if any.</summary>
+    public CodeBlockBox? ScrollOwner { get; set; }
 }
 
 public sealed class CheckMarkBox : LayoutBox

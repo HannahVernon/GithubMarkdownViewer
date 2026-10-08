@@ -50,11 +50,24 @@ public sealed class LayoutEngine
         public readonly List<TextLayoutBox> TextBoxes = new();
         public readonly Dictionary<string, double> Headings = new(StringComparer.OrdinalIgnoreCase);
         public int CodeBlocks;
+
+        /// <summary>Separator for the next selectable box, set by a list so its first item follows the block before it.</summary>
+        public string? PendingSeparator;
+    }
+
+    private static string TakeSeparator(Pass pass, string fallback)
+    {
+        var separator = pass.PendingSeparator ?? fallback;
+        pass.PendingSeparator = null;
+        return separator;
     }
 
     /// <param name="Muted">Paragraphs and headings use the quote colour.</param>
     /// <param name="Tight">Directly inside a tight list item: no gap below paragraphs and nested lists.</param>
-    private readonly record struct Context(bool Muted = false, bool Tight = false);
+    /// <param name="Compact">Inside a list item: copied text separates blocks with one newline instead of a blank line.</param>
+    private readonly record struct Context(bool Muted = false, bool Tight = false, bool Compact = false);
+
+    private static string Separator(Context context) => context.Compact ? "\n" : "\n\n";
 
     /// <summary>The vertical extent of a placed node. <c>Next</c> includes the node's bottom margin.</summary>
     private readonly record struct Placed(double Top, double Bottom, double Next);
@@ -77,17 +90,17 @@ public sealed class LayoutEngine
     {
         HeadingNode heading => LayoutHeading(pass, heading, x, y, width, context),
         ParagraphNode paragraph => LayoutParagraph(pass, paragraph, x, y, width, context),
-        CodeNode code => LayoutCode(pass, code, x, y, width),
+        CodeNode code => LayoutCode(pass, code, x, y, width, context),
         QuoteNode quote => LayoutQuote(pass, quote, x, y, width),
         ListNode list => LayoutList(pass, list, x, y, width, context),
         RuleNode => LayoutRule(pass, x, y, width),
         TableNode table => LayoutTable(pass, table, x, y, width),
-        HtmlNode html => LayoutHtml(pass, html, x, y, width),
+        HtmlNode html => LayoutHtml(pass, html, x, y, width, context),
         _ => new Placed(y, y, y),
     };
 
     private TextLayoutBox AddText(Pass pass, RichText source, TextRole role, double x, double y, double width,
-        double maxWidth, TextAlign align = TextAlign.Left, bool selectable = true)
+        double maxWidth, TextAlign align = TextAlign.Left, bool selectable = true, string separator = "\n\n")
     {
         var text = _text.Create(source, role, maxWidth, align);
         var box = new TextLayoutBox
@@ -95,10 +108,15 @@ public sealed class LayoutEngine
             Text = text,
             Source = source,
             Selectable = selectable,
+            SeparatorBefore = selectable ? TakeSeparator(pass, separator) : separator,
             Bounds = new Rect(x, y, width, text.Height),
         };
         pass.Boxes.Add(box);
-        if (selectable) pass.TextBoxes.Add(box);
+        if (selectable)
+        {
+            box.Index = pass.TextBoxes.Count;
+            pass.TextBoxes.Add(box);
+        }
         return box;
     }
 
@@ -113,7 +131,7 @@ public sealed class LayoutEngine
 
         if (level <= 2)
         {
-            var box = AddText(pass, heading.Text, role, x, top + 16, width, width);
+            var box = AddText(pass, heading.Text, role, x, top + 16, width, width, separator: Separator(context));
             var lineY = box.Bounds.Bottom + 8 + 6;
             pass.Boxes.Add(new FillBox
             {
@@ -123,23 +141,25 @@ public sealed class LayoutEngine
             return new Placed(top, lineY + 1, lineY + 1 + 8);
         }
 
-        var text = AddText(pass, heading.Text, role, x, top, width, width);
+        var text = AddText(pass, heading.Text, role, x, top, width, width, separator: Separator(context));
         return new Placed(top, text.Bounds.Bottom, text.Bounds.Bottom + 8);
     }
 
     private Placed LayoutParagraph(Pass pass, ParagraphNode paragraph, double x, double y, double width, Context context)
     {
-        var box = AddText(pass, paragraph.Text, new TextRole(TextKind.Body, context.Muted), x, y, width, width);
+        var box = AddText(pass, paragraph.Text, new TextRole(TextKind.Body, context.Muted), x, y, width, width,
+            separator: Separator(context));
         return new Placed(y, box.Bounds.Bottom, box.Bounds.Bottom + (context.Tight ? 0 : BlockGap));
     }
 
-    private Placed LayoutHtml(Pass pass, HtmlNode html, double x, double y, double width)
+    private Placed LayoutHtml(Pass pass, HtmlNode html, double x, double y, double width, Context context)
     {
-        var box = AddText(pass, RichText.Plain(html.Text), new TextRole(TextKind.Html), x, y, width, width);
+        var box = AddText(pass, RichText.Plain(html.Text), new TextRole(TextKind.Html), x, y, width, width,
+            separator: Separator(context));
         return new Placed(y, box.Bounds.Bottom, box.Bounds.Bottom + BlockGap);
     }
 
-    private Placed LayoutCode(Pass pass, CodeNode code, double x, double y, double width)
+    private Placed LayoutCode(Pass pass, CodeNode code, double x, double y, double width, Context context)
     {
         var source = RichText.Plain(code.Text);
         var text = _text.Create(source, new TextRole(TextKind.Code), double.PositiveInfinity);
@@ -149,14 +169,18 @@ public sealed class LayoutEngine
         {
             Text = text,
             Source = source,
+            SeparatorBefore = TakeSeparator(pass, Separator(context)),
+            Index = pass.TextBoxes.Count,
             Bounds = new Rect(x + CodeBlockBox.Padding, y + CodeBlockBox.Padding, text.Width, text.Height),
         };
-        pass.Boxes.Add(new CodeBlockBox
+        var block = new CodeBlockBox
         {
             Id = pass.CodeBlocks++,
             Bounds = new Rect(x, y, width, height),
             Content = content,
-        });
+        };
+        content.ScrollOwner = block;
+        pass.Boxes.Add(block);
         pass.TextBoxes.Add(content);
 
         return new Placed(y, y + height, y + height + BlockGap);
@@ -207,7 +231,7 @@ public sealed class LayoutEngine
 
         var contentX = x + ListIndent + markerWidth + MarkerGap;
         var contentWidth = Math.Max(40, width - ListIndent - markerWidth - MarkerGap);
-        var itemContext = new Context(Tight: list.Tight);
+        var itemContext = new Context(Tight: list.Tight, Compact: true);
 
         var cursor = y;
         for (var i = 0; i < list.Items.Count; i++)
@@ -235,6 +259,8 @@ public sealed class LayoutEngine
                 });
             }
 
+            // The first item follows whatever block precedes the list; later items start on the next line.
+            if (i == 0) pass.PendingSeparator = Separator(context);
             var end = LayoutNodes(pass, item.Children, contentX, cursor, contentWidth, 2, itemContext, null);
             cursor = Math.Max(end, cursor + markerHeight);
         }
@@ -305,10 +331,14 @@ public sealed class LayoutEngine
                     Stroke = PaletteColor.TableBorder,
                 });
 
+                // First cell of the first row follows a block; other first cells start a new line; the rest are tab-separated.
+                var separator = c > 0 ? "\t" : r == 0 ? TakeSeparator(pass, "\n\n") : "\n";
                 var box = new TextLayoutBox
                 {
                     Text = texts[c],
                     Source = c < row.Cells.Count ? row.Cells[c].Text : RichText.Empty,
+                    SeparatorBefore = separator,
+                    Index = pass.TextBoxes.Count,
                     Bounds = new Rect(cellX + TableCellPadX, cursor + TableCellPadY, contentWidths[c], texts[c].Height),
                 };
                 pass.Boxes.Add(box);

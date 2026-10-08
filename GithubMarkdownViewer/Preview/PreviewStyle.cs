@@ -24,6 +24,7 @@ public sealed class PreviewPalette
         TableBorder = Brush("#d1d9e0"),
         TableAltRowBackground = Brush("#f6f8fa"),
         ScrollThumb = Brush("#8c959f"),
+        SelectionBackground = Brush("#660969da"),
     };
 
     private static readonly PreviewPalette Dark = new()
@@ -41,6 +42,7 @@ public sealed class PreviewPalette
         TableBorder = Brush("#30363d"),
         TableAltRowBackground = Brush("#161b22"),
         ScrollThumb = Brush("#6e7681"),
+        SelectionBackground = Brush("#664493f8"),
     };
 
     public static PreviewPalette For(bool dark) => dark ? Dark : Light;
@@ -58,6 +60,7 @@ public sealed class PreviewPalette
     public IBrush TableBorder { get; private init; } = Brushes.Gray;
     public IBrush TableAltRowBackground { get; private init; } = Brushes.LightGray;
     public IBrush ScrollThumb { get; private init; } = Brushes.Gray;
+    public IBrush SelectionBackground { get; private init; } = Brushes.LightBlue;
 
     public IBrush? Get(PaletteColor color) => color switch
     {
