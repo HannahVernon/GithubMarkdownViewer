@@ -47,10 +47,14 @@ public sealed class MarkdownPreviewControl : Control
     {
         Focusable = true;
         Cursor = new Cursor(StandardCursorType.Ibeam);
+        ContextRequested += OnContextRequestedHandler;
     }
 
     /// <summary>Raised when the user clicks a link. The argument is the link target as written in the document.</summary>
     public event Action<string>? LinkClicked;
+
+    /// <summary>Raised when the user chooses Open in Browser from a link's context menu. The argument is an http or https address.</summary>
+    public event Action<string>? OpenLinkInBrowserRequested;
 
     /// <summary>Raised when the layout is recomputed (new text, width, font, or theme). Positions in <see cref="CurrentLayout"/> have changed.</summary>
     public event Action? DocumentLayoutChanged;
@@ -332,9 +336,10 @@ public sealed class MarkdownPreviewControl : Control
         return DocumentSelection.ExtractText(_layout, start, end);
     }
 
-    public async Task CopySelectionAsync()
+    public Task CopySelectionAsync() => CopyTextAsync(GetSelectedText());
+
+    private async Task CopyTextAsync(string text)
     {
-        var text = GetSelectedText();
         if (text.Length == 0) return;
 
         var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
@@ -344,11 +349,72 @@ public sealed class MarkdownPreviewControl : Control
 #pragma warning restore CS0618
     }
 
+    // ── Context menu ──────────────────────────────────────────────
+
+    private void OnContextRequestedHandler(object? sender, ContextRequestedEventArgs e)
+    {
+        if (_layout == null || e.Handled) return;
+
+        // A keyboard request has no position, so only the selection and Select All entries apply.
+        Point? point = e.TryGetPosition(this, out var position) ? ToContent(position) : null;
+        var entries = ContextMenuPlan.Build(_layout, point, HasSelection, CodeScrollX);
+
+        var menu = new ContextMenu();
+        int? previousGroup = null;
+        foreach (var entry in entries)
+        {
+            if (previousGroup != null && previousGroup != entry.Group)
+                menu.Items.Add(new Separator());
+
+            var item = new MenuItem
+            {
+                Header = entry.Label,
+                IsEnabled = entry.Enabled,
+                InputGesture = entry.Gesture == null ? null : KeyGesture.Parse(entry.Gesture),
+            };
+            var captured = entry;
+            item.Click += (_, _) => RunContextAction(captured);
+            menu.Items.Add(item);
+            previousGroup = entry.Group;
+        }
+
+        menu.Open(this);
+        e.Handled = true;
+    }
+
+    private void RunContextAction(ContextEntry entry)
+    {
+        switch (entry.Action)
+        {
+            case ContextAction.OpenInBrowser when entry.Text != null:
+                OpenLinkInBrowserRequested?.Invoke(entry.Text);
+                break;
+            case ContextAction.CopyUrl or ContextAction.CopyBlock when entry.Text != null:
+                _ = CopyTextAsync(entry.Text);
+                break;
+            case ContextAction.CopySelection:
+                _ = CopySelectionAsync();
+                break;
+            case ContextAction.SelectAll:
+                Focus();
+                SelectAll();
+                break;
+        }
+    }
+
     // ── Pointer input ─────────────────────────────────────────────
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         base.OnPointerPressed(e);
+
+        // A right-click focuses the preview so Ctrl+C works afterwards, but leaves the selection alone.
+        if (e.GetCurrentPoint(this).Properties.IsRightButtonPressed)
+        {
+            Focus();
+            return;
+        }
+
         if (_layout == null || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
 
         Focus();

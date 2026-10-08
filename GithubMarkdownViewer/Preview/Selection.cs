@@ -49,6 +49,28 @@ public static class DocumentSelection
         return new DocPosition(best, Math.Clamp(box.Text.HitTest(local), 0, box.Text.Length));
     }
 
+    /// <summary>
+    /// The text box whose block contains a point, or null when the point is in a gap or outside the
+    /// document. Unlike <see cref="PositionAt"/>, this never snaps to a neighbour.
+    /// </summary>
+    public static TextLayoutBox? BoxAt(LayoutResult layout, Point point)
+    {
+        foreach (var box in layout.TextBoxes)
+        {
+            if (BlockArea(box).Contains(point)) return box;
+        }
+        return null;
+    }
+
+    /// <summary>The whole block a text box belongs to: a code block's frame, or a table cell including its padding.</summary>
+    private static Rect BlockArea(TextLayoutBox box)
+    {
+        if (box.ScrollOwner != null) return box.ScrollOwner.Bounds;
+        return box.Kind == BlockKind.TableCell
+            ? box.Bounds.Inflate(new Thickness(LayoutEngine.TableCellPadX, LayoutEngine.TableCellPadY))
+            : box.Bounds;
+    }
+
     /// <summary>The character under a point, or null when the point is not over a character.</summary>
     public static int? CharIndexAt(TextLayoutBox box, Point local)
     {
