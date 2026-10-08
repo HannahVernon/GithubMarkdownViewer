@@ -92,6 +92,7 @@ public partial class MainWindow : Window
 
         PreviewSurface.LinkClicked -= OnRendererLinkClicked;
         PreviewSurface.DocumentLayoutChanged -= RebuildScrollAnchors;
+        PreviewSurface.OpenLinkInBrowserRequested -= OnOpenLinkInBrowserRequested;
 
         Editor.TextChanged -= OnEditorTextChanged;
 
@@ -404,6 +405,7 @@ public partial class MainWindow : Window
                 _markdownPipeline = new MarkdownService().Pipeline;
                 PreviewSurface.LinkClicked += OnRendererLinkClicked;
                 PreviewSurface.DocumentLayoutChanged += RebuildScrollAnchors;
+                PreviewSurface.OpenLinkInBrowserRequested += OnOpenLinkInBrowserRequested;
 
                 vm.OpenFileDialog = OpenFileDialogAsync;
                 vm.SaveFileDialog = SaveFileDialogAsync;
@@ -1107,6 +1109,16 @@ public partial class MainWindow : Window
             AppLogger.Error("Failed to open linked file", ex);
             await ShowMessageAsync("Error", "An error occurred while opening the linked file.");
         }
+    }
+
+    // The context menu only enables Open in Browser for web addresses, but check again here, because
+    // this hands the address to the operating system.
+    private void OnOpenLinkInBrowserRequested(string url)
+    {
+        if (ContextMenuPlan.IsWebUrl(url))
+            OpenUrlInBrowser(url);
+        else
+            AppLogger.Warn("Blocked Open in Browser for a link that is not an http or https address");
     }
 
     private static void OpenUrlInBrowser(string url)
