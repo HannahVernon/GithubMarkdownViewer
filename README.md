@@ -11,7 +11,8 @@ Built with [Avalonia UI](https://avaloniaui.net/) and [Markdig](https://github.c
 - **GitHub Flavored Markdown** — tables, task lists, strikethrough, autolinks, fenced code blocks, emoji, footnotes, and more
 - **YAML front matter** — a leading `---` metadata block is hidden in the preview, matching GitHub's behavior
 - **Dark & light theme support** — preview colors automatically adapt to the system theme using GitHub's color palettes
-- **Word wrap toggle** — toggle text wrapping in the editor via View > Word Wrap; the rendered preview always wraps prose to the pane width, with wide code blocks and tables scrolling horizontally on their own
+- **Word wrap toggle** — toggle text wrapping in the editor via View > Word Wrap; the rendered preview always wraps prose and table cells to the pane width, with wide code blocks scrolling sideways on their own (Shift+mouse wheel or touchpad)
+- **Select across the whole preview** — drag to select text across paragraphs, lists, tables, and code blocks; double-click selects a word, triple-click a paragraph, and Ctrl+A selects everything; Ctrl+C or Edit > Copy copies plain text (blocks separated by a blank line, table cells by tabs); dragging past the top or bottom edge scrolls
 - **View modes** — Split View, Editor Only, or Preview Only — remembered across sessions
 
 ### Clickable Links & Navigation
@@ -135,6 +136,10 @@ A navigation toolbar with **◀ Back** and **▶ Forward** buttons appears below
 ## Project Structure
 
 ```
+build.cmd                                   # One-command Windows build (calls build-all.ps1)
+build-all.ps1                               # Publishes and packages installers
+Directory.Build.props                       # NuGetAudit enforcement and security pins
+global.json                                 # Test runner selection for the .NET 10 SDK
 GithubMarkdownViewer/
 ├── Program.cs                              # Entry point with global exception handling
 ├── App.axaml(.cs)                          # Application setup, exception handlers, CLI args
@@ -145,12 +150,22 @@ GithubMarkdownViewer/
 ├── ViewModels/
 │   ├── ViewModelBase.cs                    # MVVM base class
 │   └── MainWindowViewModel.cs              # App logic, commands, file ops, safe file reading
+├── Preview/                                # Single-surface preview renderer
+│   ├── DocumentModel.cs                    # Document model: blocks, rich text, style spans
+│   ├── DocumentBuilder.cs                  # Markdig syntax tree → document model
+│   ├── LayoutEngine.cs                     # Positions blocks into boxes (no UI dependency)
+│   ├── LayoutTypes.cs                      # Boxes, text abstraction, layout result
+│   ├── Selection.cs                        # Hit testing, selection ranges, copied text
+│   ├── AvaloniaTextProvider.cs             # Text layout and drawing via Avalonia TextLayout
+│   ├── PreviewStyle.cs                     # Light and dark GitHub palettes
+│   └── MarkdownPreviewControl.cs           # Draws the document; mouse, keyboard, scrolling
 └── Services/
     ├── AppLogger.cs                        # File-based logger (%LOCALAPPDATA%)
     ├── FileAssociationService.cs           # Windows .md file extension association
     ├── MarkdownService.cs                  # Markdig GFM pipeline and sanitized HTML export
-    ├── MarkdownToAvaloniaRenderer.cs       # Custom Markdig AST → Avalonia controls renderer
     └── SettingsService.cs                  # JSON settings persistence (%APPDATA%)
+GithubMarkdownViewer.Tests/                 # xUnit tests for the document model, layout, and selection
+installer/                                  # Installer scripts for Windows, Linux, and macOS
 ```
 
 ## Settings
@@ -171,6 +186,7 @@ Application settings are stored in `%APPDATA%/GithubMarkdownViewer/settings.json
 - **Avalonia UI 11** — cross-platform XAML UI framework
 - **Markdig** — extensible Markdown processor with full GFM pipeline
 - **CommunityToolkit.Mvvm** — source-generated MVVM pattern
+- **xUnit v3** — unit tests (test project only; not shipped)
 
 ## License
 

@@ -35,6 +35,14 @@ This project follows the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.
 dotnet run --project GithubMarkdownViewer
 ```
 
+### Running tests
+
+```
+dotnet test
+```
+
+Tests live in `GithubMarkdownViewer.Tests` (xUnit v3). The repository's `global.json` selects the Microsoft.Testing.Platform runner, which the .NET 10 SDK requires for `dotnet test`. Add tests for new logic that does not need the Avalonia UI.
+
 ### Building an installer
 
 Run `build.cmd` in the repository root to publish the win-x64 binaries and build the Windows installer. Output goes to `installer\output`. See [installer/README.md](installer/README.md) for all platforms.

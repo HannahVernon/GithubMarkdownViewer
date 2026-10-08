@@ -4,6 +4,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:ae="clr-namespace:AvaloniaEdit;assembly=AvaloniaEdit"
+        xmlns:pv="using:GithubMarkdownViewer.Preview"
         mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="700"
         x:Class="GithubMarkdownViewer.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
@@ -163,7 +164,7 @@
                     <ScrollViewer Name="PreviewScrollViewer"
                                 HorizontalScrollBarVisibility="Disabled"
                                 VerticalScrollBarVisibility="Auto">
-                        <StackPanel Name="PreviewPanel" Margin="20" Spacing="0" />
+                        <pv:MarkdownPreviewControl Name="PreviewSurface" />
                     </ScrollViewer>
                 </DockPanel>
             </Border>
