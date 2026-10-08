@@ -12,16 +12,24 @@ This directory contains scripts to build installers and packages for all support
 
 ## Quick Start (Windows)
 
-```powershell
-# Build everything from the repo root
-.\installer\build-all.ps1
+```cmd
+:: From the repo root: Windows installer only (fast)
+build.cmd
+
+:: Or publish every platform
+build.cmd all
 ```
 
-This will:
-1. Publish self-contained binaries for Windows, Linux, and macOS
+`build.cmd` runs `build-all.ps1` in the repo root. It reads the version from `<Version>` in `GithubMarkdownViewer\GithubMarkdownViewer.csproj` and uses it in the installer and archive file names.
+
+`build.cmd` (win-x64 only) will:
+1. Publish a self-contained Windows binary
 2. Build the Windows installer (if Inno Setup is installed) or a portable ZIP
-3. Create a portable Linux `.tar.gz`
-4. Print instructions for building Linux `.deb`/`.rpm` and macOS `.dmg`
+
+`build.cmd all` will also:
+1. Publish self-contained binaries for Linux and macOS
+2. Create a portable Linux `.tar.gz`
+3. Print instructions for building Linux `.deb`/`.rpm` and macOS `.dmg`
 
 ## Platform-Specific Builds
 
@@ -33,9 +41,10 @@ This will:
 
 # Build with Inno Setup (GUI)
 # Open installer\windows\setup.iss in Inno Setup and click Build
+# (the version defaults to 1.0.0 unless you pass /DMyAppVersion)
 
-# Or from command line
-iscc installer\windows\setup.iss
+# Or from command line (build.cmd does this and passes the csproj version)
+iscc /DMyAppVersion=1.1.0 installer\windows\setup.iss
 ```
 
 The installer supports:
@@ -109,18 +118,21 @@ All installer artifacts are written to `installer/output/`:
 
 | File | Platform | Type |
 |------|----------|------|
-| `GithubMarkdownViewer-1.0.0-win-x64-setup.exe` | Windows | Inno Setup installer |
-| `GithubMarkdownViewer-1.0.0-win-x64-portable.zip` | Windows | Portable (no install) |
-| `GithubMarkdownViewer-1.0.0-linux-x64.tar.gz` | Linux | Portable tarball |
+| `GithubMarkdownViewer-<version>-win-x64-setup.exe` | Windows | Inno Setup installer |
+| `GithubMarkdownViewer-<version>-win-x64-portable.zip` | Windows | Portable (no install) |
+| `GithubMarkdownViewer-<version>-linux-x64.tar.gz` | Linux | Portable tarball |
 | `github-markdown-viewer_1.0.0_amd64.deb` | Linux | Debian package |
 | `github-markdown-viewer-1.0.0-1.x86_64.rpm` | Linux | RPM package |
 | `GithubMarkdownViewer-1.0.0-osx-x64.dmg` | macOS | Disk image |
 
+`<version>` is the `<Version>` value in the csproj. The `.deb`, `.rpm`, and `.dmg` scripts still use a fixed `1.0.0` in their file names.
+
 ## Directory Structure
 
 ```
+build.cmd                  # Repo root: entry point (calls build-all.ps1)
+build-all.ps1              # Repo root: master build script (publish + installers)
 installer/
-├── build-all.ps1          # Master build script (publish + all installers)
 ├── publish.ps1            # Publishes self-contained binaries
 ├── README.md              # This file
 ├── windows/

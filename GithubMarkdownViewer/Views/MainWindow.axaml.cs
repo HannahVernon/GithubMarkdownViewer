@@ -1721,10 +1721,10 @@ public partial class MainWindow : Window
         if (_reloadPromptPending) return;
         _reloadPromptPending = true;
 
-        Dispatcher.UIThread.Post(() => _ = PromptReloadFileAsync(), DispatcherPriority.Background);
+        Dispatcher.UIThread.Post(() => _ = HandleExternalFileChangeAsync(), DispatcherPriority.Background);
     }
 
-    private async Task PromptReloadFileAsync()
+    private async Task HandleExternalFileChangeAsync()
     {
         try
         {
@@ -1732,24 +1732,24 @@ public partial class MainWindow : Window
             if (string.IsNullOrEmpty(vm.CurrentFilePath)) return;
 
             var fileName = Path.GetFileName(vm.CurrentFilePath);
-            var reload = await ConfirmAsync(
-                $"The file \"{fileName}\" has been modified by another program.\n\nDo you want to reload it?");
 
-            if (reload)
+            if (vm.IsModified)
             {
-                if (!File.Exists(vm.CurrentFilePath))
-                {
-                    await ShowMessageAsync("File Not Found",
-                        $"The file no longer exists:\n{fileName}");
-                    return;
-                }
-
-                var content = await File.ReadAllTextAsync(vm.CurrentFilePath);
-                vm.MarkdownText = content;
-                vm.IsModified = false;
-                vm.StatusText = $"Reloaded: {fileName}";
-                UpdatePreview(content);
+                // Conflict: unsaved edits exist here and the file also changed on disk.
+                var reload = await ConfirmAsync(
+                    $"The file \"{fileName}\" has been modified by another program, and you have unsaved changes here.\n\nDo you want to discard your changes and reload it?");
+                if (!reload) return;
             }
+            // Else: no local edits, so reload silently to minimize disruption.
+
+            if (!File.Exists(vm.CurrentFilePath))
+            {
+                await ShowMessageAsync("File Not Found",
+                    $"The file no longer exists:\n{fileName}");
+                return;
+            }
+
+            await ReloadFileContentPreservingPositionAsync(vm, fileName);
         }
         catch (Exception ex)
         {
@@ -1759,6 +1759,38 @@ public partial class MainWindow : Window
         {
             _reloadPromptPending = false;
         }
+    }
+
+    /// <summary>
+    /// Reloads the current file's content from disk while keeping the preview and
+    /// editor scrolled to roughly the section the user was viewing beforehand.
+    /// </summary>
+    private async Task ReloadFileContentPreservingPositionAsync(MainWindowViewModel vm, string fileName)
+    {
+        var previewOffsetY = PreviewScrollViewer.Offset.Y;
+        var editorOffsetY = _editorScrollViewer?.Offset.Y;
+        var caretOffset = Editor.CaretOffset;
+
+        var content = await File.ReadAllTextAsync(vm.CurrentFilePath!);
+        vm.MarkdownText = content;
+        vm.IsModified = false;
+        vm.StatusText = $"Reloaded: {fileName}";
+        UpdatePreview(content);
+
+        // Restore scroll/caret position once the reloaded content has been laid out.
+        Dispatcher.UIThread.Post(() =>
+        {
+            var maxPreviewOffset = Math.Max(0, PreviewScrollViewer.Extent.Height - PreviewScrollViewer.Viewport.Height);
+            PreviewScrollViewer.Offset = new Vector(PreviewScrollViewer.Offset.X, Math.Min(previewOffsetY, maxPreviewOffset));
+
+            if (_editorScrollViewer != null && editorOffsetY.HasValue)
+            {
+                var maxEditorOffset = Math.Max(0, _editorScrollViewer.Extent.Height - _editorScrollViewer.Viewport.Height);
+                _editorScrollViewer.Offset = new Vector(_editorScrollViewer.Offset.X, Math.Min(editorOffsetY.Value, maxEditorOffset));
+            }
+
+            Editor.CaretOffset = Math.Min(caretOffset, Editor.Text?.Length ?? 0);
+        }, DispatcherPriority.Loaded);
     }
 
     private void UpdateLayout(MainWindowViewModel vm)

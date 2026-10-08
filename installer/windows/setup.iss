@@ -2,12 +2,14 @@
 ; Requires Inno Setup 6+ (https://jrsoftware.org/isinfo.php)
 ;
 ; Usage:
-;   1. Run installer\publish.ps1 to build the win-x64 binaries
-;   2. Open this file in Inno Setup Compiler and click Build
-;   Or from command line: iscc installer\windows\setup.iss
+;   Run build.cmd in the repo root. It publishes the win-x64 binaries and
+;   passes the version from the csproj with /DMyAppVersion=x.y.z.
+;   Manual: run installer\publish.ps1, then: iscc /DMyAppVersion=x.y.z installer\windows\setup.iss
 
 #define MyAppName "GitHub Markdown Viewer"
-#define MyAppVersion "1.0.0"
+#ifndef MyAppVersion
+  #define MyAppVersion "1.0.0"
+#endif
 #define MyAppPublisher "Hannah Vernon"
 #define MyAppURL "https://github.com/HannahVernon/GithubMarkdownViewer"
 #define MyAppExeName "GithubMarkdownViewer.exe"

@@ -13,7 +13,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
-$ProjectPath = Join-Path $RepoRoot "GithubMarkdownViewer" "GithubMarkdownViewer.csproj"
+$ProjectPath = Join-Path (Join-Path $RepoRoot "GithubMarkdownViewer") "GithubMarkdownViewer.csproj"
 $PublishBase = Join-Path $PSScriptRoot "publish"
 
 # Resolve dotnet to full path to prevent PATH hijacking
