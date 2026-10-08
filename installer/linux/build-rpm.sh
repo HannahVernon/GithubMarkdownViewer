@@ -46,6 +46,14 @@ mkdir -p "$OUTPUT_DIR"
 
 # Create the spec file
 cat > "$RPM_BUILD_ROOT/SPECS/$APP_NAME.spec" << EOF
+# The app is a prebuilt .NET single-file bundle: the app and runtime are appended to a small
+# native launcher. rpmbuild's default post-install steps strip binaries and extract debug
+# information, which discards the appended bundle and leaves a launcher that cannot start.
+# Turn those steps off so the package carries the binary exactly as published.
+%global debug_package %{nil}
+%global __os_install_post %{nil}
+%global _build_id_links none
+
 Name:           ${APP_NAME}
 Version:        ${APP_VERSION}
 Release:        ${APP_RELEASE}%{?dist}
