@@ -18,6 +18,7 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 using AvaloniaEdit;
 using AvaloniaEdit.Document;
+using GithubMarkdownViewer.Preview;
 using GithubMarkdownViewer.Services;
 using GithubMarkdownViewer.Models;
 using GithubMarkdownViewer.ViewModels;
@@ -26,7 +27,10 @@ namespace GithubMarkdownViewer.Views;
 
 public partial class MainWindow : Window
 {
-    private MarkdownToAvaloniaRenderer? _renderer;
+    private Markdig.MarkdownPipeline? _markdownPipeline;
+
+    // Which pane last had focus, so Edit > Copy and Select All act on the right one.
+    private bool _previewFocused;
     private DispatcherTimer? _previewTimer;
     private bool _previewDirty;
     private ScrollViewer? _editorScrollViewer;
@@ -86,8 +90,8 @@ public partial class MainWindow : Window
 
         StopFileWatcher();
 
-        if (_renderer != null)
-            _renderer.LinkClicked -= OnRendererLinkClicked;
+        PreviewSurface.LinkClicked -= OnRendererLinkClicked;
+        PreviewSurface.LayoutUpdated -= RebuildScrollAnchors;
 
         Editor.TextChanged -= OnEditorTextChanged;
 
@@ -397,9 +401,9 @@ public partial class MainWindow : Window
         {
             try
             {
-                _renderer = new MarkdownToAvaloniaRenderer(
-                    new MarkdownService().Pipeline);
-                _renderer.LinkClicked += OnRendererLinkClicked;
+                _markdownPipeline = new MarkdownService().Pipeline;
+                PreviewSurface.LinkClicked += OnRendererLinkClicked;
+                PreviewSurface.LayoutUpdated += RebuildScrollAnchors;
 
                 vm.OpenFileDialog = OpenFileDialogAsync;
                 vm.SaveFileDialog = SaveFileDialogAsync;
@@ -470,11 +474,21 @@ public partial class MainWindow : Window
                 ReplaceOneButton.Click += (_, _) => ReplaceOne();
                 ReplaceAllButton.Click += (_, _) => ReplaceAll();
 
-                // Wire up Edit > Cut/Copy/Paste/Select All
+                // Wire up Edit > Cut/Copy/Paste/Select All. Copy and Select All act on whichever pane last had focus.
+                PreviewSurface.GotFocus += (_, _) => _previewFocused = true;
+                Editor.TextArea.GotFocus += (_, _) => _previewFocused = false;
                 CutMenuItem.Click += (_, _) => EditorCut();
-                CopyMenuItem.Click += (_, _) => EditorCopy();
+                CopyMenuItem.Click += (_, _) =>
+                {
+                    if (_previewFocused) _ = PreviewSurface.CopySelectionAsync();
+                    else EditorCopy();
+                };
                 PasteMenuItem.Click += async (_, _) => await EditorPasteAsync();
-                SelectAllMenuItem.Click += (_, _) => EditorSelectAll();
+                SelectAllMenuItem.Click += (_, _) =>
+                {
+                    if (_previewFocused) PreviewSurface.SelectAll();
+                    else EditorSelectAll();
+                };
 
                 // Update Edit menu item enabled state when the menu opens
                 var editMenu = CutMenuItem.Parent as MenuItem;
@@ -500,7 +514,6 @@ public partial class MainWindow : Window
                 // Try to reopen last document; fall back to sample content
                 _ = InitContentAsync(vm);
 
-                _renderer.SetFont(vm.FontFamilyName, vm.FontSizePx, vm.EditorFontWeight);
                 Editor.FontWeight = vm.EditorFontWeight;
                 Editor.TextArea.TextView.SetValue(TextElement.FontWeightProperty, vm.EditorFontWeight);
                 Editor.TextArea.TextView.Redraw();
@@ -546,8 +559,6 @@ public partial class MainWindow : Window
         {
             _editorScrollViewer.PropertyChanged += OnEditorScrollPropertyChanged;
             PreviewScrollViewer.PropertyChanged += OnPreviewScrollPropertyChanged;
-            // Rebuild anchors when layout changes (window resize, splitter drag)
-            PreviewScrollViewer.PropertyChanged += OnPreviewExtentChanged;
             AppLogger.Info("Scroll sync initialized");
         }
         else
@@ -583,37 +594,17 @@ public partial class MainWindow : Window
         SyncPreviewToEditor();
     }
 
-    private void OnPreviewExtentChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
-    {
-        if (e.Property == ScrollViewer.ExtentProperty || e.Property == ScrollViewer.ViewportProperty)
-        {
-            Dispatcher.UIThread.Post(RebuildScrollAnchors, DispatcherPriority.Loaded);
-        }
-    }
-
     /// <summary>
-    /// Rebuilds the scroll anchor cache from the current preview panel children.
-    /// Each anchor maps a source line range to a Y position within the PreviewScrollViewer.
+    /// Rebuilds the scroll anchor cache from the preview layout. Each anchor maps a source line
+    /// range to a Y position in the preview content (which starts <see cref="MarkdownPreviewControl.ContentPadding"/>
+    /// below the top of the scrolled area). Called whenever the layout is recomputed.
     /// </summary>
     private void RebuildScrollAnchors()
     {
-        var anchors = new List<ScrollAnchor>();
-
-        foreach (var child in PreviewPanel.Children)
-        {
-            if (child.Tag is not MarkdownToAvaloniaRenderer.SourceLineSpan span) continue;
-
-            // Get the child's position relative to the PreviewScrollViewer content area
-            var transform = child.TransformToVisual(PreviewPanel);
-            if (transform == null) continue;
-
-            var topLeft = transform.Value.Transform(new Point(0, 0));
-            var height = child.Bounds.Height;
-
-            anchors.Add(new ScrollAnchor(span.StartLine, span.EndLine, topLeft.Y, height));
-        }
-
-        _scrollAnchors = anchors;
+        var layout = PreviewSurface.CurrentLayout;
+        _scrollAnchors = layout?.Anchors
+            .Select(a => new ScrollAnchor(a.StartLine, a.EndLine, a.Y, a.Height))
+            .ToList();
     }
 
     /// <summary>
@@ -648,8 +639,8 @@ public partial class MainWindow : Window
             // Scroll preview so the matching content is at viewport center
             var previewTargetOffset = targetY - PreviewScrollViewer.Viewport.Height / 2;
 
-            // Account for PreviewPanel margin (20px top)
-            previewTargetOffset += 20;
+            // Anchor positions exclude the preview's top padding
+            previewTargetOffset += MarkdownPreviewControl.ContentPadding;
 
             previewTargetOffset = Math.Max(0, Math.Min(previewTargetOffset,
                 PreviewScrollViewer.Extent.Height - PreviewScrollViewer.Viewport.Height));
@@ -678,10 +669,10 @@ public partial class MainWindow : Window
         {
             _isSyncingScroll = true;
 
-            // The Y coordinate within the PreviewPanel content that's at viewport center
+            // The Y coordinate within the preview content that's at viewport center
             var previewCenterY = PreviewScrollViewer.Offset.Y + PreviewScrollViewer.Viewport.Height / 2;
-            // Subtract PreviewPanel margin
-            previewCenterY -= 20;
+            // Subtract the preview's top padding
+            previewCenterY -= MarkdownPreviewControl.ContentPadding;
 
             var centerLine = FindLineForPreviewY(previewCenterY);
             if (centerLine < 1) centerLine = 1;
@@ -711,7 +702,7 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Given a source line number, find the Y position within PreviewPanel content
+    /// Given a source line number, find the Y position within the preview content
     /// where that line's content is rendered. Interpolates within blocks.
     /// </summary>
     private double FindPreviewYForLine(int line)
@@ -758,7 +749,7 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Given a Y position within PreviewPanel content, find the source line number
+    /// Given a Y position within the preview content, find the source line number
     /// that maps to that position. Inverse of FindPreviewYForLine.
     /// </summary>
     private int FindLineForPreviewY(double y)
@@ -843,13 +834,12 @@ public partial class MainWindow : Window
                 _previewTimer?.Start();
             }
 
-            // Font changes: update renderer and force re-render
+            // Font changes: update the editor and re-render the preview
             if (e.PropertyName is nameof(MainWindowViewModel.FontFamilyName)
                                or nameof(MainWindowViewModel.FontSizePt)
                                or nameof(MainWindowViewModel.FontWeightName)
                                or nameof(MainWindowViewModel.EditorFontWeight))
             {
-                _renderer?.SetFont(vm.FontFamilyName, vm.FontSizePx, vm.EditorFontWeight);
                 // AvaloniaEdit doesn't propagate FontWeight to its internal TextView,
                 // so we must push it to both the outer control and the inner rendering surface.
                 // After setting the property, we must force a full redraw because AvaloniaEdit
@@ -921,26 +911,15 @@ public partial class MainWindow : Window
     {
         try
         {
-            PreviewPanel.Children.Clear();
-            if (_renderer == null || string.IsNullOrEmpty(markdown)) return;
-
-            foreach (var control in _renderer.Render(markdown))
-                PreviewPanel.Children.Add(control);
-
-            // Rebuild scroll anchors after layout completes
-            Dispatcher.UIThread.Post(RebuildScrollAnchors, DispatcherPriority.Loaded);
+            _markdownPipeline ??= new MarkdownService().Pipeline;
+            if (DataContext is MainWindowViewModel vm)
+                PreviewSurface.Configure(vm.FontFamilyName, vm.FontSizePx, vm.EditorFontWeight);
+            PreviewSurface.SetMarkdown(markdown ?? "", _markdownPipeline);
         }
         catch (Exception ex)
         {
             AppLogger.Error("Error rendering markdown preview", ex);
-            PreviewPanel.Children.Clear();
-            PreviewPanel.Children.Add(new TextBlock
-            {
-                Text = "An error occurred while rendering the preview.",
-                Foreground = Avalonia.Media.Brushes.Red,
-                TextWrapping = Avalonia.Media.TextWrapping.Wrap,
-                Margin = new Thickness(8),
-            });
+            PreviewSurface.SetMarkdown("An error occurred while rendering the preview.", _markdownPipeline ??= new MarkdownService().Pipeline);
         }
     }
 
@@ -998,37 +977,32 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Scrolls the preview pane to the control whose Name matches the given anchor ID.
+    /// Scrolls the preview pane to the heading whose anchor ID matches.
     /// Optionally pushes the current position onto the back stack for navigation.
     /// </summary>
     private void ScrollToAnchor(string anchorId, bool pushToBackStack = true)
     {
         if (string.IsNullOrEmpty(anchorId)) return;
 
-        foreach (var child in PreviewPanel.Children)
+        // Make sure positions are current even if the preview has not been measured since the last edit.
+        var layout = PreviewSurface.GetLayout();
+        if (layout == null || !layout.HeadingPositions.TryGetValue(anchorId, out var headingY))
         {
-            if (!string.Equals(child.Name, anchorId, StringComparison.OrdinalIgnoreCase))
-                continue;
-
-            var transform = child.TransformToVisual(PreviewPanel);
-            if (transform == null) continue;
-
-            if (pushToBackStack && DataContext is MainWindowViewModel vm
-                && !string.IsNullOrEmpty(vm.CurrentFilePath))
-            {
-                _backStack.Push(new NavigationEntry(vm.CurrentFilePath, PreviewScrollViewer.Offset.Y));
-                _forwardStack.Clear();
-                UpdateNavigationButtons();
-            }
-
-            var position = transform.Value.Transform(new Point(0, 0));
-            // Account for PreviewPanel margin (20px)
-            var targetY = position.Y + 20;
-            PreviewScrollViewer.Offset = new Vector(PreviewScrollViewer.Offset.X, targetY);
+            AppLogger.Warn($"Anchor not found: #{anchorId}");
             return;
         }
 
-        AppLogger.Warn($"Anchor not found: #{anchorId}");
+        if (pushToBackStack && DataContext is MainWindowViewModel vm
+            && !string.IsNullOrEmpty(vm.CurrentFilePath))
+        {
+            _backStack.Push(new NavigationEntry(vm.CurrentFilePath, PreviewScrollViewer.Offset.Y));
+            _forwardStack.Clear();
+            UpdateNavigationButtons();
+        }
+
+        // Heading positions exclude the control's padding above the content.
+        var targetY = headingY + MarkdownPreviewControl.ContentPadding;
+        PreviewScrollViewer.Offset = new Vector(PreviewScrollViewer.Offset.X, targetY);
     }
 
     private async Task OpenRelativeMarkdownFileAsync(string relativeUrl)
@@ -1629,11 +1603,12 @@ public partial class MainWindow : Window
 
     private async Task UpdateEditMenuStateAsync()
     {
-        var hasSelection = HasEditorSelection;
+        // Cut and Paste only apply to the editor; Copy follows whichever pane last had focus.
+        var hasSelection = _previewFocused ? PreviewSurface.HasSelection : HasEditorSelection;
         var canPaste = await ClipboardHasTextAsync();
-        CutMenuItem.IsEnabled = hasSelection;
+        CutMenuItem.IsEnabled = !_previewFocused && hasSelection;
         CopyMenuItem.IsEnabled = hasSelection;
-        PasteMenuItem.IsEnabled = canPaste;
+        PasteMenuItem.IsEnabled = !_previewFocused && canPaste;
     }
 
     private MenuItem _contextCutItem = null!;
@@ -1822,8 +1797,8 @@ public partial class MainWindow : Window
     private void ApplyWordWrapScrollBehavior(bool wordWrap)
     {
         // The Word Wrap toggle only affects the editor. The rendered preview
-        // always wraps prose to the pane width; wide code blocks and tables get
-        // their own horizontal scrollbar (see MarkdownToAvaloniaRenderer).
+        // always wraps prose to the pane width; wide code blocks scroll sideways on their
+        // own and table cells wrap (see MarkdownPreviewControl).
         Editor.WordWrap = wordWrap;
     }
 
