@@ -35,6 +35,10 @@ This project follows the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.
 dotnet run --project GithubMarkdownViewer
 ```
 
+### Building an installer
+
+Run `build.cmd` in the repository root to publish the win-x64 binaries and build the Windows installer. Output goes to `installer\output`. See [installer/README.md](installer/README.md) for all platforms.
+
 ## How to Contribute
 
 ### Reporting Bugs

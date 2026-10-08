@@ -9,6 +9,7 @@ Built with [Avalonia UI](https://avaloniaui.net/) and [Markdig](https://github.c
 ### Editing & Preview
 - **Live split-pane preview** — edit markdown on the left, see rendered output on the right, with synchronized scrolling (vertical and horizontal, bidirectional)
 - **GitHub Flavored Markdown** — tables, task lists, strikethrough, autolinks, fenced code blocks, emoji, footnotes, and more
+- **YAML front matter** — a leading `---` metadata block is hidden in the preview, matching GitHub's behavior
 - **Dark & light theme support** — preview colors automatically adapt to the system theme using GitHub's color palettes
 - **Word wrap toggle** — toggle text wrapping in the editor via View > Word Wrap; the rendered preview always wraps prose to the pane width, with wide code blocks and tables scrolling horizontally on their own
 - **View modes** — Split View, Editor Only, or Preview Only — remembered across sessions
@@ -27,6 +28,7 @@ Built with [Avalonia UI](https://avaloniaui.net/) and [Markdig](https://github.c
 - **Auto-reopen** — automatically reopens the last document on startup
 - **Command-line argument** — open a `.md` file by passing its path as an argument (supports double-click from shell)
 - **Unsaved changes protection** — prompts to Save / Don't Save / Cancel before closing or opening a new file
+- **External change detection** — when the open file changes on disk, it reloads automatically and keeps your scroll and caret position; if you also have unsaved edits, the app asks before discarding them
 - **HTML export** — exports as standalone HTML with GitHub-style CSS, with raw HTML sanitized to prevent XSS
 
 ### Customization & Persistence
@@ -86,6 +88,14 @@ dotnet run --project GithubMarkdownViewer
 # Open a specific file
 dotnet run --project GithubMarkdownViewer -- path/to/file.md
 ```
+
+### Building an installer (Windows)
+
+```cmd
+build.cmd
+```
+
+This publishes the win-x64 binaries and creates `installer\output\GithubMarkdownViewer-<version>-win-x64-setup.exe`. The version comes from `<Version>` in `GithubMarkdownViewer\GithubMarkdownViewer.csproj`. [Inno Setup 6](https://jrsoftware.org/isinfo.php) is optional; without it, the build creates a portable ZIP instead. Run `build.cmd all` to also publish the Linux and macOS binaries. See [installer/README.md](installer/README.md) for details.
 
 ## Keyboard Shortcuts
 
