@@ -96,6 +96,12 @@ public partial class MainWindowViewModel : ViewModelBase
         "SemiBold", "Bold", "ExtraBold", "Black"
     };
 
+    /// <summary>
+    /// Status bar text for a document load, such as "Reloaded at 2026-10-08 14:37:02".
+    /// </summary>
+    public static string LoadedStatus(string verb, DateTime when) =>
+        $"{verb} at {when.ToString("yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture)}";
+
     internal static FontWeight ParseFontWeight(string name) => name switch
     {
         "Thin" => FontWeight.Thin,
@@ -216,7 +222,7 @@ public partial class MainWindowViewModel : ViewModelBase
                 CurrentFilePath = fileToOpen;
                 IsModified = false;
                 AddToRecentFiles(fileToOpen);
-                StatusText = $"Opened: {Path.GetFileName(fileToOpen)}";
+                StatusText = LoadedStatus("Opened", DateTime.Now);
             }
         }
     }
@@ -368,7 +374,7 @@ public partial class MainWindowViewModel : ViewModelBase
             CurrentFilePath = path;
             IsModified = false;
             AddToRecentFiles(path);
-            StatusText = $"Opened: {Path.GetFileName(path)}";
+            StatusText = LoadedStatus("Opened", DateTime.Now);
         }
     }
 
@@ -389,7 +395,7 @@ public partial class MainWindowViewModel : ViewModelBase
         CurrentFilePath = path;
         IsModified = false;
         AddToRecentFiles(path);
-        StatusText = $"Opened: {Path.GetFileName(path)}";
+        StatusText = LoadedStatus("Opened", DateTime.Now);
     }
 
     [RelayCommand(CanExecute = nameof(HasFile))]
@@ -407,7 +413,7 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             MarkdownText = content;
             IsModified = false;
-            StatusText = $"Reloaded: {Path.GetFileName(CurrentFilePath)}";
+            StatusText = LoadedStatus("Reloaded", DateTime.Now);
         }
     }
 
