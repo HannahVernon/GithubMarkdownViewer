@@ -138,6 +138,53 @@ SOFTWARE.
 
 ---
 
+## Tmds.DBus.Protocol
+
+- **Package:** Tmds.DBus.Protocol (v0.21.3)
+  (transitive dependency via Avalonia on Linux; pinned in `Directory.Build.props`
+  to a version that fixes CVE-2026-39959)
+- **License:** MIT
+- **Source:** https://github.com/tmds/Tmds.DBus
+
+```
+Copyright 2006 Alp Toker <alp@atoker.com>
+Copyright 2010 Other Contributors
+Copyright 2016 Tom Deseyn <tom.deseyn@gmail.com>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+---
+
+## Test-only dependencies (not distributed)
+
+These packages are used only by the `GithubMarkdownViewer.Tests` project.  They
+are not included in the application, installers, or release files.
+
+Package | Version | License | Copyright | Source
+--------|---------|---------|-----------|-------
+xunit.v3 | 4.0.1 | Apache-2.0 | Copyright (C) .NET Foundation | https://github.com/xunit/xunit
+xunit.runner.visualstudio | 4.0.0 | Apache-2.0 | Copyright (C) .NET Foundation | https://github.com/xunit/visualstudio.xunit
+Microsoft.NET.Test.Sdk | 18.10.1 | MIT | (c) Microsoft Corporation | https://github.com/microsoft/vstest
+
+---
+
 ## MicroCom
 
 - **Package:** MicroCom.Runtime (v0.11.0)
