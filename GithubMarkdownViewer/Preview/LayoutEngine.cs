@@ -16,8 +16,9 @@ public sealed class LayoutEngine
     private const double CheckMarkSize = 16;
     private const double QuoteBarWidth = 4;
     private const double QuotePadding = 16;
-    private const double TableCellPadX = 10;
-    private const double TableCellPadY = 6;
+    /// <summary>Space between a table cell's border and its text, horizontally and vertically.</summary>
+    public const double TableCellPadX = 10;
+    public const double TableCellPadY = 6;
     private const double BlockGap = 12;
 
     private readonly ITextProvider _text;
