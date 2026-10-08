@@ -1,0 +1,53 @@
+# Normalize all text files in the repo. Git stores LF internally and applies
+# the per-path eol rules below on checkout.
+* text=auto
+
+# --- Windows-centric / Visual Studio tooling: force CRLF ---
+# These files are produced or consumed by Windows tools that expect CRLF and
+# will rewrite the whole file if the endings don't match.
+*.sln       text eol=crlf
+*.csproj    text eol=crlf
+*.vbproj    text eol=crlf
+*.props     text eol=crlf
+*.targets   text eol=crlf
+*.config    text eol=crlf
+*.ps1       text eol=crlf
+*.psm1      text eol=crlf
+*.psd1      text eol=crlf
+*.bat       text eol=crlf
+*.cmd       text eol=crlf
+
+# --- Unix shell / tooling: force LF ---
+*.sh        text eol=lf
+*.bash      text eol=lf
+
+# --- Cross-platform source: let Git normalize to LF in the repo ---
+*.cs        text
+*.java      text
+*.js        text
+*.ts        text
+*.json      text
+*.xml       text
+*.md        text
+*.yml       text
+*.yaml      text
+*.sql       text
+
+# --- This repo: Avalonia XAML, Inno Setup script, and app manifest ---
+*.axaml     text
+*.iss       text
+*.manifest  text
+
+# --- Binary files: never touch ---
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.ico       binary
+*.pdf       binary
+*.zip       binary
+*.dll       binary
+*.exe       binary
+*.snk       binary
+*.xlsx      binary
+*.docx      binary
