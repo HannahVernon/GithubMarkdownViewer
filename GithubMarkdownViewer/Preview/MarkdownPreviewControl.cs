@@ -51,7 +51,21 @@ public sealed class MarkdownPreviewControl : Control
     /// <summary>Raised when the user clicks a link. The argument is the link target as written in the document.</summary>
     public event Action<string>? LinkClicked;
 
+    /// <summary>Raised when the layout is recomputed (new text, width, font, or theme). Positions in <see cref="CurrentLayout"/> have changed.</summary>
+    public event Action? LayoutUpdated;
+
     public LayoutResult? CurrentLayout => _layout;
+
+    /// <summary>
+    /// Returns the current layout, computing it now if it is out of date. Returns null until the
+    /// control has a width (it has not been laid out yet).
+    /// </summary>
+    public LayoutResult? GetLayout()
+    {
+        if (_layout == null && Bounds.Width > 0)
+            EnsureLayout(Bounds.Width);
+        return _layout;
+    }
 
     public bool HasSelection => _hasSelection && _anchor != _caret;
 
@@ -109,6 +123,8 @@ public sealed class MarkdownPreviewControl : Control
         // The structure is the same after a resize or theme change, but drop the selection if it no longer fits.
         if (_hasSelection && (_anchor.Box >= _layout.TextBoxes.Count || _caret.Box >= _layout.TextBoxes.Count))
             ClearSelection();
+
+        LayoutUpdated?.Invoke();
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)

@@ -164,10 +164,7 @@
                     <ScrollViewer Name="PreviewScrollViewer"
                                 HorizontalScrollBarVisibility="Disabled"
                                 VerticalScrollBarVisibility="Auto">
-                        <Grid>
-                            <StackPanel Name="PreviewPanel" Margin="20" Spacing="0" />
-                            <pv:MarkdownPreviewControl Name="CustomPreview" IsVisible="False" />
-                        </Grid>
+                        <pv:MarkdownPreviewControl Name="PreviewSurface" />
                     </ScrollViewer>
                 </DockPanel>
             </Border>
