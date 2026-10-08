@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Build a macOS .app bundle and .dmg disk image for GitHub Markdown Viewer
-# Usage: ./build-dmg.sh
+# Usage: ./build-dmg.sh [version]
+#   The version is the first argument, else the APP_VERSION environment variable,
+#   else <Version> from GithubMarkdownViewer/GithubMarkdownViewer.csproj.
 # Prerequisites: Run publish.ps1 -Runtime osx-x64 first (or dotnet publish)
 
 set -euo pipefail
@@ -8,11 +10,17 @@ umask 077
 
 APP_NAME="GitHub Markdown Viewer"
 APP_BUNDLE_ID="com.hannahvernon.githubmarkdownviewer"
-APP_VERSION="1.0.0"
 APP_EXECUTABLE="GithubMarkdownViewer"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+APP_VERSION="${1:-${APP_VERSION:-$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' "$REPO_ROOT/GithubMarkdownViewer/GithubMarkdownViewer.csproj" | head -n 1)}}"
+if ! [[ "$APP_VERSION" =~ ^[0-9]+(\.[0-9]+){1,3}$ ]]; then
+    echo "ERROR: Invalid or missing version '$APP_VERSION'. Pass it as the first argument, for example 1.2.3."
+    exit 1
+fi
+
 PUBLISH_DIR="$REPO_ROOT/installer/publish/osx-x64"
 OUTPUT_DIR="$REPO_ROOT/installer/output"
 STAGING_DIR="$REPO_ROOT/installer/staging-macos"
