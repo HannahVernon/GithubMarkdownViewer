@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
 using Microsoft.Win32;
 
 namespace GithubMarkdownViewer.Services;
@@ -162,6 +163,9 @@ public static class FileAssociationService
         }
     }
 
+    // These helpers read the registry, which only exists on Windows. Their callers check the platform first;
+    // the attribute lets the compiler's platform analyzer see that.
+    [SupportedOSPlatform("windows")]
     private static string? GetUserChoiceProgId()
     {
         using var key = Registry.CurrentUser.OpenSubKey(
@@ -169,6 +173,7 @@ public static class FileAssociationService
         return key?.GetValue("ProgId") as string;
     }
 
+    [SupportedOSPlatform("windows")]
     private static string? GetExePathForProgId(string progId)
     {
         // Check HKCU first, then HKLM
@@ -178,6 +183,7 @@ public static class FileAssociationService
         return GetExePathFromRoot(Registry.ClassesRoot, progId);
     }
 
+    [SupportedOSPlatform("windows")]
     private static string? GetExePathFromRoot(RegistryKey root, string progId)
     {
         using var cmdKey = root.OpenSubKey($@"Software\Classes\{progId}\shell\open\command")
