@@ -14,6 +14,7 @@ using Markdig.Syntax;
 using Markdig.Syntax.Inlines;
 using Markdig.Extensions.TaskLists;
 using Markdig.Extensions.Tables;
+using Markdig.Extensions.Yaml;
 using Markdig.Renderers.Html;
 
 namespace GithubMarkdownViewer.Services;
@@ -200,6 +201,10 @@ public class MarkdownToAvaloniaRenderer
     {
         switch (block)
         {
+            case YamlFrontMatterBlock:
+                // Frontmatter metadata is not part of the rendered content (matches GitHub's behavior).
+                yield break;
+
             case HeadingBlock heading:
                 yield return TagWithSourceLine(RenderHeading(heading), heading);
                 break;
