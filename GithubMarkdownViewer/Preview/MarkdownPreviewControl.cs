@@ -53,7 +53,7 @@ public sealed class MarkdownPreviewControl : Control
     public event Action<string>? LinkClicked;
 
     /// <summary>Raised when the layout is recomputed (new text, width, font, or theme). Positions in <see cref="CurrentLayout"/> have changed.</summary>
-    public event Action? LayoutUpdated;
+    public event Action? DocumentLayoutChanged;
 
     public LayoutResult? CurrentLayout => _layout;
 
@@ -125,7 +125,7 @@ public sealed class MarkdownPreviewControl : Control
         if (_hasSelection && (_anchor.Box >= _layout.TextBoxes.Count || _caret.Box >= _layout.TextBoxes.Count))
             ClearSelection();
 
-        LayoutUpdated?.Invoke();
+        DocumentLayoutChanged?.Invoke();
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)

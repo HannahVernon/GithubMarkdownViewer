@@ -20,11 +20,11 @@ public sealed class MarkdownPreviewAutomationPeer : ControlAutomationPeer
     public MarkdownPreviewAutomationPeer(MarkdownPreviewControl owner) : base(owner)
     {
         _owner = owner;
-        owner.LayoutUpdated += OnLayoutUpdated;
+        owner.DocumentLayoutChanged += OnDocumentLayoutChanged;
     }
 
     // The layout changes during measure, so report the change after it finishes.
-    private void OnLayoutUpdated() => Dispatcher.UIThread.Post(InvalidateChildren, DispatcherPriority.Background);
+    private void OnDocumentLayoutChanged() => Dispatcher.UIThread.Post(InvalidateChildren, DispatcherPriority.Background);
 
     protected override AutomationControlType GetAutomationControlTypeCore() => AutomationControlType.Document;
 
