@@ -1095,7 +1095,7 @@ public partial class MainWindow : Window
             vm.CurrentFilePath = resolvedPath;
             vm.IsModified = false;
             vm.AddToRecentFiles(resolvedPath);
-            vm.StatusText = $"Opened: {Path.GetFileName(resolvedPath)}";
+            vm.StatusText = MainWindowViewModel.LoadedStatus("Opened", DateTime.Now);
             UpdatePreview(content);
 
             // Scroll to fragment anchor after layout completes
@@ -1272,7 +1272,7 @@ public partial class MainWindow : Window
             vm.CurrentFilePath = filePath;
             vm.IsModified = false;
             vm.AddToRecentFiles(filePath);
-            vm.StatusText = $"Opened: {Path.GetFileName(filePath)}";
+            vm.StatusText = MainWindowViewModel.LoadedStatus("Opened", DateTime.Now);
             UpdatePreview(content);
         }
         catch (Exception ex)
@@ -1761,7 +1761,7 @@ public partial class MainWindow : Window
         var content = await File.ReadAllTextAsync(vm.CurrentFilePath!);
         vm.MarkdownText = content;
         vm.IsModified = false;
-        vm.StatusText = $"Reloaded: {fileName}";
+        vm.StatusText = MainWindowViewModel.LoadedStatus("Reloaded", DateTime.Now);
         UpdatePreview(content);
 
         // Restore scroll/caret position once the reloaded content has been laid out.
