@@ -47,6 +47,7 @@
             <MenuItem Header="_Edit">
                 <MenuItem Header="Cu_t" Name="CutMenuItem" InputGesture="Ctrl+X" />
                 <MenuItem Header="_Copy" Name="CopyMenuItem" InputGesture="Ctrl+C" />
+                <MenuItem Header="Copy to Clipboard (_Teams Format)" Name="CopyTeamsFormatMenuItem" />
                 <MenuItem Header="_Paste" Name="PasteMenuItem" InputGesture="Ctrl+V" />
                 <Separator />
                 <MenuItem Header="Select _All" Name="SelectAllMenuItem" InputGesture="Ctrl+A" />

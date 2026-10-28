@@ -9,6 +9,7 @@ using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using GithubMarkdownViewer.Services;
 using Markdig;
 
 namespace GithubMarkdownViewer.Preview;
@@ -338,6 +339,25 @@ public sealed class MarkdownPreviewControl : Control
 
     public Task CopySelectionAsync() => CopyTextAsync(GetSelectedText());
 
+    /// <summary>
+    /// Copies the selection, or the whole document when nothing is selected, as HTML for a Teams message
+    /// together with the same plain text that <see cref="CopySelectionAsync"/> copies.
+    /// </summary>
+    public async Task CopyTeamsFormatAsync()
+    {
+        if (_layout == null) return;
+        var range = HasSelection ? Ordered() : DocumentSelection.SelectAll(_layout);
+        if (range is not { } r) return;
+
+        var html = HasSelection ? TeamsHtml.Write(_nodes, r.Start, r.End) : TeamsHtml.Write(_nodes);
+        var text = DocumentSelection.ExtractText(_layout, r.Start, r.End);
+        if (html.Length == 0 && text.Length == 0) return;
+
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (clipboard == null) return;
+        await HtmlClipboard.SetAsync(clipboard, html, text);
+    }
+
     private async Task CopyTextAsync(string text)
     {
         if (text.Length == 0) return;
@@ -394,6 +414,9 @@ public sealed class MarkdownPreviewControl : Control
                 break;
             case ContextAction.CopySelection:
                 _ = CopySelectionAsync();
+                break;
+            case ContextAction.CopyTeamsFormat:
+                _ = CopyTeamsFormatAsync();
                 break;
             case ContextAction.SelectAll:
                 Focus();

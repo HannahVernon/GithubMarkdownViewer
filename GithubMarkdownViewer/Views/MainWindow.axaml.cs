@@ -486,6 +486,8 @@ public partial class MainWindow : Window
                     else EditorCopy();
                 };
                 PasteMenuItem.Click += async (_, _) => await EditorPasteAsync();
+                // Teams format always copies from the preview: its selection, or the whole document.
+                CopyTeamsFormatMenuItem.Click += (_, _) => _ = PreviewSurface.CopyTeamsFormatAsync();
                 SelectAllMenuItem.Click += (_, _) =>
                 {
                     if (_previewFocused) PreviewSurface.SelectAll();

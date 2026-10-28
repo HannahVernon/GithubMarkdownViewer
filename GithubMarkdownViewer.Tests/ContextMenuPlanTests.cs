@@ -29,7 +29,7 @@ public class ContextMenuPlanTests
 
         var entries = ContextMenuPlan.Build(layout, OnLink, hasSelection: false);
 
-        Assert.Equal(new[] { ContextAction.OpenInBrowser, ContextAction.CopyUrl, ContextAction.CopyBlock, ContextAction.SelectAll },
+        Assert.Equal(new[] { ContextAction.OpenInBrowser, ContextAction.CopyUrl, ContextAction.CopyBlock, ContextAction.CopyTeamsFormat, ContextAction.SelectAll },
             Actions(entries));
         Assert.Equal("https://x.y/z", entries[0].Text);
         Assert.Equal("https://x.y/z", entries[1].Text);
@@ -102,7 +102,7 @@ public class ContextMenuPlanTests
         var block = entries.Single(e => e.Action == ContextAction.CopyBlock);
         Assert.Equal("Copy paragraph", block.Label);
         Assert.Equal("first", block.Text);
-        Assert.Equal(new[] { ContextAction.CopyBlock, ContextAction.SelectAll }, Actions(entries));
+        Assert.Equal(new[] { ContextAction.CopyBlock, ContextAction.CopyTeamsFormat, ContextAction.SelectAll }, Actions(entries));
     }
 
     [Fact]
@@ -180,31 +180,39 @@ public class ContextMenuPlanTests
 
         var entries = ContextMenuPlan.Build(layout, new Point(8, 8), hasSelection: true);
 
-        Assert.Equal(new[] { ContextAction.CopySelection, ContextAction.CopyBlock, ContextAction.SelectAll }, Actions(entries));
+        Assert.Equal(new[] { ContextAction.CopySelection, ContextAction.CopyBlock, ContextAction.CopyTeamsFormat, ContextAction.SelectAll }, Actions(entries));
         Assert.Equal("Ctrl+C", entries[0].Gesture);
         Assert.Equal(entries[0].Group, entries[1].Group);
         Assert.Null(entries[0].Text);
     }
 
     [Fact]
-    public void ClickingBlankSpaceOffersOnlySelectAll()
+    public void ClickingBlankSpaceOffersOnlyWholeDocumentEntries()
     {
         using var layout = Layout("first");
 
         var entries = ContextMenuPlan.Build(layout, new Point(300, 500), hasSelection: false);
 
-        Assert.Equal(new[] { ContextAction.SelectAll }, Actions(entries));
-        Assert.Equal("Ctrl+A", entries[0].Gesture);
+        Assert.Equal(new[] { ContextAction.CopyTeamsFormat, ContextAction.SelectAll }, Actions(entries));
+        Assert.Equal("Ctrl+A", entries[^1].Gesture);
     }
 
     [Fact]
-    public void BlankSpaceWithASelectionOffersCopyAndSelectAll()
+    public void BlankSpaceWithASelectionAddsCopy()
     {
         using var layout = Layout("first");
 
         var entries = ContextMenuPlan.Build(layout, new Point(300, 500), hasSelection: true);
 
-        Assert.Equal(new[] { ContextAction.CopySelection, ContextAction.SelectAll }, Actions(entries));
+        Assert.Equal(new[] { ContextAction.CopySelection, ContextAction.CopyTeamsFormat, ContextAction.SelectAll }, Actions(entries));
+    }
+
+    [Fact]
+    public void AnEmptyDocumentHasNothingToCopyInTeamsFormat()
+    {
+        using var layout = Layout("");
+
+        Assert.DoesNotContain(ContextMenuPlan.Build(layout, null, false), e => e.Action == ContextAction.CopyTeamsFormat);
     }
 
     [Fact]
@@ -212,8 +220,8 @@ public class ContextMenuPlanTests
     {
         using var layout = Layout(LinkParagraph);
 
-        Assert.Equal(new[] { ContextAction.SelectAll }, Actions(ContextMenuPlan.Build(layout, null, false)));
-        Assert.Equal(new[] { ContextAction.CopySelection, ContextAction.SelectAll },
+        Assert.Equal(new[] { ContextAction.CopyTeamsFormat, ContextAction.SelectAll }, Actions(ContextMenuPlan.Build(layout, null, false)));
+        Assert.Equal(new[] { ContextAction.CopySelection, ContextAction.CopyTeamsFormat, ContextAction.SelectAll },
             Actions(ContextMenuPlan.Build(layout, null, true)));
     }
 
