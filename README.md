@@ -14,6 +14,7 @@ Built with [Avalonia UI](https://avaloniaui.net/) and [Markdig](https://github.c
 - **Word wrap toggle** — toggle text wrapping in the editor via View > Word Wrap; the rendered preview always wraps prose and table cells to the pane width, with wide code blocks scrolling sideways on their own (Shift+mouse wheel or touchpad)
 - **Select across the whole preview** — drag to select text across paragraphs, lists, tables, and code blocks; double-click selects a word, triple-click a paragraph, and Ctrl+A selects everything; Ctrl+C or Edit > Copy copies plain text (blocks separated by a blank line, table cells by tabs); dragging past the top or bottom edge scrolls
 - **Right-click menu** — right-click in the preview for Copy (when text is selected), Select All, and Copy paragraph, heading, code block, or cell contents for the block under the pointer; right-click a link for Copy URL and Open in Browser (enabled for `http` / `https` links only); right-clicking never changes the selection
+- **Copy to Clipboard (Teams Format)** — in the preview's right-click menu and the Edit menu; copies the selection, or the whole document when nothing is selected, as formatted HTML that pastes cleanly into a Microsoft Teams message (headings, lists, tables, code blocks, inline code, and web links), plus the same plain text as Ctrl+C for apps that only accept text; links to local files become plain text, and wide tables scroll sideways in Teams
 - **Screen reader support** — the preview is exposed through UI Automation: headings with their levels, paragraphs, list items, table cells, and code blocks are readable elements, and links can be listed and activated by assistive technology
 - **View modes** — Split View, Editor Only, or Preview Only — remembered across sessions
 
@@ -159,6 +160,7 @@ GithubMarkdownViewer/
 │   ├── LayoutTypes.cs                      # Boxes, text abstraction, layout result
 │   ├── Selection.cs                        # Hit testing, selection ranges, copied text
 │   ├── ContextMenuPlan.cs                  # Which right-click menu entries apply at a point
+│   ├── TeamsHtml.cs                        # Document or selection as HTML for a Teams message
 │   ├── AutomationModel.cs                  # Snapshot of blocks, headings, and links for screen readers
 │   ├── Automation.cs                       # UI Automation peers that expose the preview
 │   ├── AvaloniaTextProvider.cs             # Text layout and drawing via Avalonia TextLayout
@@ -167,6 +169,7 @@ GithubMarkdownViewer/
 └── Services/
     ├── AppLogger.cs                        # File-based logger (%LOCALAPPDATA%)
     ├── FileAssociationService.cs           # Windows .md file extension association
+    ├── HtmlClipboard.cs                    # HTML plus plain text on the clipboard (CF_HTML on Windows)
     ├── MarkdownService.cs                  # Markdig GFM pipeline and sanitized HTML export
     └── SettingsService.cs                  # JSON settings persistence (%APPDATA%)
 GithubMarkdownViewer.Tests/                 # xUnit tests for the document model, layout, and selection

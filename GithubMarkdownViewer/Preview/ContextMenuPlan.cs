@@ -10,6 +10,7 @@ public enum ContextAction
     CopyUrl,
     CopySelection,
     CopyBlock,
+    CopyTeamsFormat,
     SelectAll,
 }
 
@@ -28,6 +29,8 @@ public static class ContextMenuPlan
     private const int LinkGroup = 0;
     private const int CopyGroup = 1;
     private const int SelectGroup = 2;
+
+    public const string TeamsFormatLabel = "Copy to Clipboard (Teams Format)";
 
     /// <param name="point">Where the user clicked, in content coordinates, or null when opened from the keyboard.</param>
     /// <param name="hasSelection">Whether any text is selected.</param>
@@ -53,6 +56,10 @@ public static class ContextMenuPlan
 
         if (block != null && !string.IsNullOrWhiteSpace(block.Source.Text))
             entries.Add(new ContextEntry(ContextAction.CopyBlock, BlockLabel(block.Kind), block.Source.Text, CopyGroup));
+
+        // Copies the selection, or the whole document when nothing is selected.
+        if (layout.TextBoxes.Count > 0)
+            entries.Add(new ContextEntry(ContextAction.CopyTeamsFormat, TeamsFormatLabel, null, CopyGroup));
 
         entries.Add(new ContextEntry(ContextAction.SelectAll, "Select All", null, SelectGroup, Gesture: "Ctrl+A"));
         return entries;
