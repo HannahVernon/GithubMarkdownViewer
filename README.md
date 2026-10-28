@@ -7,50 +7,50 @@ Built with [Avalonia UI](https://avaloniaui.net/) and [Markdig](https://github.c
 ## Features
 
 ### Editing & Preview
-- **Live split-pane preview** — edit markdown on the left, see rendered output on the right, with synchronized scrolling (vertical and horizontal, bidirectional)
-- **GitHub Flavored Markdown** — tables, task lists, strikethrough, autolinks, fenced code blocks, emoji, footnotes, and more
-- **YAML front matter** — a leading `---` metadata block is hidden in the preview, matching GitHub's behavior
-- **Dark & light theme support** — preview colors automatically adapt to the system theme using GitHub's color palettes
-- **Word wrap toggle** — toggle text wrapping in the editor via View > Word Wrap; the rendered preview always wraps prose and table cells to the pane width, with wide code blocks scrolling sideways on their own (Shift+mouse wheel or touchpad)
-- **Select across the whole preview** — drag to select text across paragraphs, lists, tables, and code blocks; double-click selects a word, triple-click a paragraph, and Ctrl+A selects everything; Ctrl+C or Edit > Copy copies plain text (blocks separated by a blank line, table cells by tabs); dragging past the top or bottom edge scrolls
-- **Right-click menu** — right-click in the preview for Copy (when text is selected), Select All, and Copy paragraph, heading, code block, or cell contents for the block under the pointer; right-click a link for Copy URL and Open in Browser (enabled for `http` / `https` links only); right-clicking never changes the selection
-- **Copy to Clipboard (Teams Format)** — in the preview's right-click menu and the Edit menu; copies the selection, or the whole document when nothing is selected, as formatted HTML that pastes cleanly into a Microsoft Teams message (headings, lists, tables, code blocks, inline code, and web links), plus the same plain text as Ctrl+C for apps that only accept text; links to local files become plain text, and wide tables scroll sideways in Teams
-- **Screen reader support** — the preview is exposed through UI Automation: headings with their levels, paragraphs, list items, table cells, and code blocks are readable elements, and links can be listed and activated by assistive technology
-- **View modes** — Split View, Editor Only, or Preview Only — remembered across sessions
+- **Live split-pane preview** - edit markdown on the left, see rendered output on the right, with synchronized scrolling (vertical and horizontal, bidirectional)
+- **GitHub Flavored Markdown** - tables, task lists, strikethrough, autolinks, fenced code blocks, emoji, footnotes, and more
+- **YAML front matter** - a leading `---` metadata block is hidden in the preview, matching GitHub's behavior
+- **Dark & light theme support** - preview colors automatically adapt to the system theme using GitHub's color palettes
+- **Word wrap toggle** - toggle text wrapping in the editor via View > Word Wrap; the rendered preview always wraps prose and table cells to the pane width, with wide code blocks scrolling sideways on their own (Shift+mouse wheel or touchpad)
+- **Select across the whole preview** - drag to select text across paragraphs, lists, tables, and code blocks; double-click selects a word, triple-click a paragraph, and Ctrl+A selects everything; Ctrl+C or Edit > Copy copies plain text (blocks separated by a blank line, table cells by tabs); dragging past the top or bottom edge scrolls
+- **Right-click menu** - right-click in the preview for Copy (when text is selected), Select All, and Copy paragraph, heading, code block, or cell contents for the block under the pointer; right-click a link for Copy URL and Open in Browser (enabled for `http` / `https` links only); right-clicking never changes the selection
+- **Copy to Clipboard (Teams Format)** - in the preview's right-click menu and the Edit menu; copies the selection, or the whole document when nothing is selected, as formatted HTML that pastes cleanly into a Microsoft Teams message (headings, lists, tables, code blocks, inline code, and web links), plus the same plain text as Ctrl+C for apps that only accept text; links to local files become plain text, and wide tables scroll sideways in Teams
+- **Screen reader support** - the preview is exposed through UI Automation: headings with their levels, paragraphs, list items, table cells, and code blocks are readable elements, and links can be listed and activated by assistive technology
+- **View modes** - Split View, Editor Only, or Preview Only - remembered across sessions
 
 ### Clickable Links & Navigation
-- **Clickable `.md` links** — relative markdown links in the preview pane open the linked file in the editor
-- **Anchor links** — `#heading` links scroll to the matching heading within the current document; `file.md#heading` links navigate to the file and then scroll to the heading
-- **GitHub-compatible heading IDs** — heading anchors are generated using GitHub's algorithm (preserves leading numbers, converts em dashes to hyphens)
-- **Back / Forward navigation** — browser-style history with scroll-position restoration, supporting toolbar buttons, keyboard shortcuts (Alt+Left / Alt+Right), and mouse back/forward buttons; anchor jumps within the same file are also added to the history stack
-- **External links** — `http` / `https` links open in the default browser
-- **Link tooltips** — hover over any link to see the full URL
+- **Clickable `.md` links** - relative markdown links in the preview pane open the linked file in the editor
+- **Anchor links** - `#heading` links scroll to the matching heading within the current document; `file.md#heading` links navigate to the file and then scroll to the heading
+- **GitHub-compatible heading IDs** - heading anchors are generated using GitHub's algorithm (preserves leading numbers, converts em dashes to hyphens)
+- **Back / Forward navigation** - browser-style history with scroll-position restoration, supporting toolbar buttons, keyboard shortcuts (Alt+Left / Alt+Right), and mouse back/forward buttons; anchor jumps within the same file are also added to the history stack
+- **External links** - `http` / `https` links open in the default browser
+- **Link tooltips** - hover over any link to see the full URL
 
 ### File Operations
-- **Full file operations** — New, Open, Save, Save As, Export HTML, with standard keyboard shortcuts
-- **Recent files** — quick access to recently opened documents (showing parent directory context, with full path tooltips)
-- **Auto-reopen** — automatically reopens the last document on startup
-- **Command-line argument** — open a `.md` file by passing its path as an argument (supports double-click from shell)
-- **Unsaved changes protection** — prompts to Save / Don't Save / Cancel before closing or opening a new file
-- **External change detection** — when the open file changes on disk, it reloads automatically and keeps your scroll and caret position; if you also have unsaved edits, the app asks before discarding them
-- **HTML export** — exports as standalone HTML with GitHub-style CSS, with raw HTML sanitized to prevent XSS
+- **Full file operations** - New, Open, Save, Save As, Export HTML, with standard keyboard shortcuts
+- **Recent files** - quick access to recently opened documents (showing parent directory context, with full path tooltips)
+- **Auto-reopen** - automatically reopens the last document on startup
+- **Command-line argument** - open a `.md` file by passing its path as an argument (supports double-click from shell)
+- **Unsaved changes protection** - prompts to Save / Don't Save / Cancel before closing or opening a new file
+- **External change detection** - when the open file changes on disk, it reloads automatically and keeps your scroll and caret position; if you also have unsaved edits, the app asks before discarding them
+- **HTML export** - exports as standalone HTML with GitHub-style CSS, with raw HTML sanitized to prevent XSS
 
 ### Customization & Persistence
-- **Configurable font** — choose any installed font and size via Format > Font, with Cascadia Code 10pt as default
-- **Window state persistence** — remembers window size, position, and maximized state across sessions
-- **Settings stored in user profile** — settings saved to `%APPDATA%/GithubMarkdownViewer/`, logs to `%LOCALAPPDATA%/GithubMarkdownViewer/`
+- **Configurable font** - choose any installed font and size via Format > Font, with Cascadia Code 10pt as default
+- **Window state persistence** - remembers window size, position, and maximized state across sessions
+- **Settings stored in user profile** - settings saved to `%APPDATA%/GithubMarkdownViewer/`, logs to `%LOCALAPPDATA%/GithubMarkdownViewer/`
 
 ### Platform Integration
-- **File association (Windows)** — optionally associate `.md` files with the app on first run for double-click opening
-- **Cross-platform** — runs on Windows, macOS, and Linux
-- **About dialog** — app info, version, and link to the GitHub repository
+- **File association (Windows)** - optionally associate `.md` files with the app on first run for double-click opening
+- **Cross-platform** - runs on Windows, macOS, and Linux
+- **About dialog** - app info, version, and link to the GitHub repository
 
 ### Security
-- **Path traversal protection** — warns when markdown links navigate outside the current directory
-- **UNC path blocking** — rejects network paths to prevent NTLM credential leaks
-- **File size limits** — rejects files larger than 50 MB to prevent out-of-memory crashes
-- **HTML sanitization** — raw HTML in markdown is escaped in HTML exports to prevent script injection
-- **No JavaScript execution** — the preview pane renders to native UI controls; embedded scripts are displayed as inert text
+- **Path traversal protection** - warns when markdown links navigate outside the current directory
+- **UNC path blocking** - rejects network paths to prevent NTLM credential leaks
+- **File size limits** - rejects files larger than 50 MB to prevent out-of-memory crashes
+- **HTML sanitization** - raw HTML in markdown is escaped in HTML exports to prevent script injection
+- **No JavaScript execution** - the preview pane renders to native UI controls; embedded scripts are displayed as inert text
 
 ## GFM Extensions Supported
 
@@ -190,11 +190,11 @@ Application settings are stored in `%APPDATA%/GithubMarkdownViewer/settings.json
 
 ## Technology Stack
 
-- **.NET 9** — latest cross-platform runtime
-- **Avalonia UI 11** — cross-platform XAML UI framework
-- **Markdig** — extensible Markdown processor with full GFM pipeline
-- **CommunityToolkit.Mvvm** — source-generated MVVM pattern
-- **xUnit v3** — unit tests (test project only; not shipped)
+- **.NET 9** - latest cross-platform runtime
+- **Avalonia UI 11** - cross-platform XAML UI framework
+- **Markdig** - extensible Markdown processor with full GFM pipeline
+- **CommunityToolkit.Mvvm** - source-generated MVVM pattern
+- **xUnit v3** - unit tests (test project only; not shipped)
 
 ## License
 
