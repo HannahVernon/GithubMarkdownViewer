@@ -48,15 +48,11 @@ public partial class App : Application
                 _ => ThemeVariant.Default,
             };
 
-            // If a file was passed as a command-line argument, set it for opening
+            // If a file was passed as a command-line argument, set it for opening.  Network (UNC) paths are allowed:
+            // the user chose this file.  Links inside documents are checked separately (NetworkPath).
             if (desktop.Args is { Length: > 0 } && !string.IsNullOrEmpty(desktop.Args[0]))
             {
-                var argPath = desktop.Args[0];
-                // Block UNC paths to prevent NTLM hash leaks
-                if (!argPath.StartsWith(@"\\", StringComparison.Ordinal))
-                    vm.StartupFilePath = argPath;
-                else
-                    AppLogger.Warn("Blocked UNC path from command-line argument");
+                vm.StartupFilePath = desktop.Args[0];
             }
 
             desktop.MainWindow = new MainWindow

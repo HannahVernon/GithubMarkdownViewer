@@ -1038,11 +1038,11 @@ public partial class MainWindow : Window
             return;
         }
 
-        // Block UNC paths to prevent NTLM hash leaks
-        if (resolvedPath.StartsWith(@"\\", StringComparison.Ordinal))
+        // A link to a network (UNC) server: Windows sends the user's sign-in to that server, so ask first,
+        // unless the current document is already on the same server.
+        if (NetworkPath.LinkNeedsConfirmation(vm.CurrentFilePath, resolvedPath))
         {
-            await ShowMessageAsync("Security Warning", "Cannot open files from network paths.");
-            return;
+            if (!await ConfirmAsync(NetworkPath.LinkConfirmationMessage(resolvedPath))) return;
         }
 
         // Path traversal protection: warn if navigating outside the current directory tree
@@ -1245,13 +1245,7 @@ public partial class MainWindow : Window
 
     private async Task NavigateToFileAsync(MainWindowViewModel vm, string filePath)
     {
-        // Block UNC paths
-        if (filePath.StartsWith(@"\\", StringComparison.Ordinal))
-        {
-            await ShowMessageAsync("Security Warning", "Cannot open files from network paths.");
-            return;
-        }
-
+        // Back and forward only revisit files the user already opened or confirmed, so network paths need no new question.
         if (!File.Exists(filePath))
         {
             await ShowMessageAsync("File Not Found",
