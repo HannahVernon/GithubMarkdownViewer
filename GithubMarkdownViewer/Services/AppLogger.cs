@@ -21,8 +21,9 @@ public static class AppLogger
 
     static AppLogger()
     {
+        // Create: on Linux, GetFolderPath returns "" when ~/.local/share does not exist yet.
         LogDirectory = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolderOption.Create),
             "GithubMarkdownViewer", "logs");
         Directory.CreateDirectory(LogDirectory);
         var timestamp = DateTime.Now.ToString("yyyy-MM-dd");

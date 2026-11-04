@@ -204,26 +204,34 @@ public partial class MainWindowViewModel : ViewModelBase
     /// </summary>
     public async Task TryReopenLastFileAsync()
     {
-        // Command-line file takes priority (e.g. double-click from shell)
-        var fileToOpen = StartupFilePath;
-
-        if (string.IsNullOrEmpty(fileToOpen) || !File.Exists(fileToOpen))
+        // Command-line file takes priority (e.g. double-click from shell).  When one was given but cannot be opened,
+        // say so and do not fall back to the last document: showing an older file instead looks as if it were the
+        // file the user asked for.
+        if (!string.IsNullOrEmpty(StartupFilePath))
         {
-            var settings = SettingsService.Load();
-            fileToOpen = settings.LastOpenFilePath;
+            await OpenStartupOrLastFileAsync(StartupFilePath, isStartupFile: true);
+            return;
         }
 
-        if (!string.IsNullOrEmpty(fileToOpen))
+        var settings = SettingsService.Load();
+        if (!string.IsNullOrEmpty(settings.LastOpenFilePath))
+            await OpenStartupOrLastFileAsync(settings.LastOpenFilePath, isStartupFile: false);
+    }
+
+    private async Task OpenStartupOrLastFileAsync(string fileToOpen, bool isStartupFile)
+    {
+        var content = await SafeReadFileAsync(fileToOpen, showFullPath: isStartupFile);
+        if (content != null)
         {
-            var content = await SafeReadFileAsync(fileToOpen);
-            if (content != null)
-            {
-                MarkdownText = content;
-                CurrentFilePath = fileToOpen;
-                IsModified = false;
-                AddToRecentFiles(fileToOpen);
-                StatusText = LoadedStatus("Opened", DateTime.Now);
-            }
+            MarkdownText = content;
+            CurrentFilePath = fileToOpen;
+            IsModified = false;
+            AddToRecentFiles(fileToOpen);
+            StatusText = LoadedStatus("Opened", DateTime.Now);
+        }
+        else if (isStartupFile)
+        {
+            StatusText = $"Could not open {NetworkPath.Display(fileToOpen)}";
         }
     }
 
@@ -290,23 +298,16 @@ public partial class MainWindowViewModel : ViewModelBase
     public void SaveSettingsOnExit() => SaveSettings();
 
     /// <summary>
-    /// Safely reads a file after validating size and path.
-    /// Returns null and shows a message dialog if the file is too large or the path is invalid.
+    /// Safely reads a file after validating its size.
+    /// Returns null and shows a message dialog if the file is too large or cannot be read.
+    /// Network (UNC) paths are allowed here: every caller opens a file the user chose.
     /// </summary>
-    private async Task<string?> SafeReadFileAsync(string filePath)
+    private async Task<string?> SafeReadFileAsync(string filePath, bool showFullPath = false)
     {
+        var shown = showFullPath ? NetworkPath.Display(filePath) : Path.GetFileName(filePath);
         try
         {
             var fullPath = Path.GetFullPath(filePath);
-
-            // Block UNC paths to prevent NTLM hash leaks
-            if (fullPath.StartsWith(@"\\", StringComparison.Ordinal))
-            {
-                if (ShowMessageDialog != null)
-                    await ShowMessageDialog("Security Warning", "Cannot open files from network paths (UNC).");
-                AppLogger.Warn("Blocked UNC path access attempt");
-                return null;
-            }
 
             // Open stream first, then check length — eliminates TOCTOU race
             using var stream = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.Read);
@@ -322,17 +323,17 @@ public partial class MainWindowViewModel : ViewModelBase
             using var reader = new StreamReader(stream);
             return await reader.ReadToEndAsync();
         }
-        catch (FileNotFoundException)
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
         {
             if (ShowMessageDialog != null)
-                await ShowMessageDialog("File Not Found", $"Could not find:\n{Path.GetFileName(filePath)}");
+                await ShowMessageDialog("File Not Found", $"Could not find:\n{shown}");
             return null;
         }
         catch (Exception ex)
         {
             AppLogger.Error("Failed to read file", ex);
             if (ShowMessageDialog != null)
-                await ShowMessageDialog("Error", "An error occurred while reading the file.");
+                await ShowMessageDialog("Error", $"An error occurred while reading:\n{shown}\n\n{ex.Message}");
             return null;
         }
     }
@@ -539,8 +540,9 @@ public partial class MainWindowViewModel : ViewModelBase
         switch (choice)
         {
             case "save":
-                await SaveFileAs();
-                // If the user cancelled the Save As dialog, IsModified is still true
+                // Saves in place when the document has a file; asks for a name (Save As) only when it is new.
+                await SaveFile();
+                // If the user cancelled the Save As dialog, or the save failed, IsModified is still true
                 return !IsModified;
             case "discard":
                 return true;

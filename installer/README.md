@@ -64,11 +64,20 @@ pwsh installer/publish.ps1 -Runtime linux-x64
 # Build .deb (on Linux)
 bash installer/linux/build-deb.sh
 
-# Install
-sudo dpkg -i installer/output/github-markdown-viewer_<version>_amd64.deb
+# Install (apt also installs the system libraries the package depends on; dpkg -i does not)
+sudo apt install ./installer/output/github-markdown-viewer_<version>_amd64.deb
 ```
 
 The version comes from the first argument if you pass one (`bash installer/linux/build-deb.sh 1.2.3`), otherwise from the `APP_VERSION` environment variable, otherwise from `<Version>` in the csproj. The `.rpm` and `.dmg` scripts work the same way.
+
+The app is self-contained, so it does not need the .NET runtime, but it loads these system libraries at run time.  The `.deb` (`Depends`) and `.rpm` (`Requires`) declare them, so the package manager installs them:
+
+- ICU, for .NET globalization (`libicu76`, `libicu72` and so on; `libicu` on Fedora)
+- fontconfig, for SkiaSharp text rendering (`libfontconfig1`; `fontconfig`)
+- X11 libraries that Avalonia loads: `libx11-6`, `libice6`, `libsm6`, `libxcursor1`, `libxext6`, `libxi6`, `libxrandr2` (`libX11`, `libICE`, `libSM`, `libXcursor`, `libXext`, `libXi`, `libXrandr`)
+- Recommended, not required: OpenGL (`libgl1`; `mesa-libGL`), without which the app uses software rendering, and GTK 3 (`libgtk-3-0t64`; `gtk3`), which provides the Open and Save dialogs when the desktop has no file-chooser portal
+
+If you run the portable `tar.gz` instead of a package, install those libraries yourself, for example on Debian or Ubuntu: `sudo apt install libicu76 libfontconfig1 libx11-6 libice6 libsm6 libxcursor1 libxext6 libxi6 libxrandr2` (use the `libicu` version your release has).
 
 ### Linux .rpm Package
 
@@ -78,8 +87,8 @@ The version comes from the first argument if you pass one (`bash installer/linux
 # Build .rpm (on Linux with rpm-build)
 bash installer/linux/build-rpm.sh
 
-# Install
-sudo rpm -i installer/output/github-markdown-viewer-<version>-1*.rpm
+# Install (dnf also installs the required system libraries)
+sudo dnf install ./installer/output/github-markdown-viewer-<version>-1*.rpm
 ```
 
 ### macOS .app Bundle + .dmg

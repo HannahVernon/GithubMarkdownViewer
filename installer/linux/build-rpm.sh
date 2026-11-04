@@ -62,6 +62,11 @@ License:        MIT
 URL:            ${APP_URL}
 BuildArch:      x86_64
 AutoReqProv:    no
+# The app is self-contained, but these system libraries are loaded at run time:
+# ICU (.NET globalization), fontconfig (SkiaSharp), and the X11 libraries Avalonia opens.
+Requires:       libicu, fontconfig, libX11, libICE, libSM, libXcursor, libXext, libXi, libXrandr
+# Optional: OpenGL (software rendering is used without it) and GTK 3 (file dialogs when no portal is present).
+Recommends:     mesa-libGL, gtk3
 
 %description
 A cross-platform .NET 9 desktop application for viewing and editing
@@ -119,4 +124,4 @@ rm -rf "$RPM_BUILD_ROOT"
 
 echo ""
 echo "RPM package created in: $OUTPUT_DIR/"
-echo "Install with: sudo rpm -i $OUTPUT_DIR/${APP_NAME}-${APP_VERSION}-${APP_RELEASE}*.rpm"
+echo "Install with: sudo dnf install $OUTPUT_DIR/${APP_NAME}-${APP_VERSION}-${APP_RELEASE}*.rpm   (dnf also installs the dependencies)"

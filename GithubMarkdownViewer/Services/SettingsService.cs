@@ -10,8 +10,10 @@ namespace GithubMarkdownViewer.Services;
 /// </summary>
 public static class SettingsService
 {
+    // Create: on Linux, GetFolderPath returns "" when ~/.config does not exist yet, and the settings
+    // would land in the current directory.
     private static readonly string SettingsDir = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData, Environment.SpecialFolderOption.Create),
         "GithubMarkdownViewer");
 
     private static readonly string SettingsPath = Path.Combine(SettingsDir, "settings.json");
