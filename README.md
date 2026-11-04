@@ -47,7 +47,7 @@ Built with [Avalonia UI](https://avaloniaui.net/) and [Markdig](https://github.c
 
 ### Security
 - **Path traversal protection** - warns when markdown links navigate outside the current directory
-- **UNC path blocking** - rejects network paths to prevent NTLM credential leaks
+- **Network path (UNC) links need confirmation** - files you open yourself (double-click, Open dialog, recent files) can be on a network share.  A link inside a document that points to a different network server asks before it opens, because Windows sends your sign-in details (NTLM) to that server.
 - **File size limits** - rejects files larger than 50 MB to prevent out-of-memory crashes
 - **HTML sanitization** - raw HTML in markdown is escaped in HTML exports to prevent script injection
 - **No JavaScript execution** - the preview pane renders to native UI controls; embedded scripts are displayed as inert text
