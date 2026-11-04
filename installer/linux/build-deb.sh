@@ -16,6 +16,13 @@ APP_MAINTAINER="Hannah Vernon"
 APP_DESCRIPTION="A cross-platform Markdown viewer and editor with GitHub Flavored Markdown support"
 APP_URL="https://github.com/HannahVernon/GithubMarkdownViewer"
 
+# The app is self-contained (no .NET runtime needed), but it loads these system libraries at run time:
+# ICU for .NET globalization (one version per Debian or Ubuntu release), fontconfig for SkiaSharp,
+# and the X11 libraries Avalonia opens.  Without them the app stops at startup.
+DEB_DEPENDS="libc6, libgcc-s1, libstdc++6, libicu76 | libicu74 | libicu72 | libicu70 | libicu67, libfontconfig1, libx11-6, libice6, libsm6, libxcursor1, libxext6, libxi6, libxrandr2"
+# Optional: OpenGL (software rendering is used without it) and GTK 3 (file dialogs when no portal is present).
+DEB_RECOMMENDS="libgl1, libgtk-3-0t64 | libgtk-3-0"
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
@@ -82,6 +89,8 @@ Priority: optional
 Architecture: amd64
 Installed-Size: $INSTALLED_SIZE
 Maintainer: $APP_MAINTAINER
+Depends: $DEB_DEPENDS
+Recommends: $DEB_RECOMMENDS
 Description: $APP_DESCRIPTION
  A cross-platform .NET 9 desktop application for viewing and editing
  Markdown files with live preview and full GitHub Flavored Markdown
@@ -121,4 +130,4 @@ rm -rf "$STAGING_DIR"
 
 echo ""
 echo "Package created: $DEB_FILE"
-echo "Install with: sudo dpkg -i $DEB_FILE"
+echo "Install with: sudo apt install ./$(basename "$DEB_FILE")   (run from $OUTPUT_DIR; apt also installs the dependencies)"
