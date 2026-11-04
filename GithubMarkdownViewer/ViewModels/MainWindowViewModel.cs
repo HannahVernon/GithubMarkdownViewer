@@ -540,8 +540,9 @@ public partial class MainWindowViewModel : ViewModelBase
         switch (choice)
         {
             case "save":
-                await SaveFileAs();
-                // If the user cancelled the Save As dialog, IsModified is still true
+                // Saves in place when the document has a file; asks for a name (Save As) only when it is new.
+                await SaveFile();
+                // If the user cancelled the Save As dialog, or the save failed, IsModified is still true
                 return !IsModified;
             case "discard":
                 return true;
