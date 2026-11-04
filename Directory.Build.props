@@ -12,7 +12,9 @@
       Pin a patched version of a transitive dependency (Avalonia.Desktop > Avalonia.X11 >
       Avalonia.FreeDesktop). 0.21.2 has GHSA-xrw6-gwf8-vvr9 (CVE-2026-39959, high).
       Remove this pin once Avalonia ships a version that depends on 0.21.3 or later.
+      Do not add PrivateAssets="All": the SDK then treats the package as build-only and leaves
+      Tmds.DBus.Protocol.dll out of the published app, and the app stops at startup on Linux.
     -->
-    <PackageReference Include="Tmds.DBus.Protocol" Version="0.21.3" PrivateAssets="All" />
+    <PackageReference Include="Tmds.DBus.Protocol" Version="0.21.3" />
   </ItemGroup>
 </Project>
