@@ -143,8 +143,16 @@ ln -sf /Applications "$DMG_STAGING/Applications"
 
 # Create the DMG
 if command -v hdiutil > /dev/null 2>&1; then
+    # Give hdiutil an explicit size.  Left to estimate from -srcfolder, it can choose an image too
+    # small for the app on APFS runners and fail with "No space left on device" (v1.11.52).
+    # Size: the staged folder plus 20% plus 20 MB; UDZO compresses the result, so the margin is not shipped.
+    STAGED_MB=$(du -sm "$DMG_STAGING" | cut -f1)
+    DMG_SIZE_MB=$(( STAGED_MB + STAGED_MB / 5 + 20 ))
+    echo "Staged app: ${STAGED_MB} MB; disk image size: ${DMG_SIZE_MB} MB"
     hdiutil create -volname "$APP_NAME" \
         -srcfolder "$DMG_STAGING" \
+        -size "${DMG_SIZE_MB}m" \
+        -fs HFS+ \
         -ov -format UDZO \
         "$DMG_PATH"
     echo "DMG created: $DMG_PATH"

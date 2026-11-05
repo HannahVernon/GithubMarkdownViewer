@@ -1,7 +1,7 @@
 name: Package Check
 
-# Builds the Linux packages on a clean runner and checks that the app inside each one is the full
-# published binary. This runs only when packaging inputs change, so it does not slow other pull requests.
+# Builds the Linux packages and the macOS disk image on clean runners and checks that the app inside each
+# one is the full published binary. This runs only when packaging inputs change, so it does not slow other pull requests.
 on:
   pull_request:
     branches: [main, dev]
@@ -54,3 +54,34 @@ jobs:
           if [ "$rpm_size" != "$expected" ]; then echo "::error::The .rpm does not contain the full published binary"; status=1; fi
           if [ "$deb_size" != "$expected" ]; then echo "::error::The .deb does not contain the full published binary"; status=1; fi
           exit $status
+
+  # Builds the macOS disk image the same way the release does, so a packaging change cannot first fail at release time.
+  macos-dmg:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Publish
+        shell: pwsh
+        run: ./installer/publish.ps1 -Runtime osx-x64 -Version 0.0.1
+
+      - name: Build .dmg
+        run: bash installer/macos/build-dmg.sh 0.0.1
+
+      - name: Check the disk image holds the full published binary
+        run: |
+          expected=$(stat -f %z installer/publish/osx-x64/GithubMarkdownViewer)
+          mount_point=$(mktemp -d)
+          hdiutil attach -nobrowse -readonly -mountpoint "$mount_point" installer/output/*.dmg > /dev/null
+          actual=$(stat -f %z "$mount_point/GitHub Markdown Viewer.app/Contents/MacOS/GithubMarkdownViewer")
+          hdiutil detach "$mount_point" > /dev/null
+          echo "published binary: $expected bytes"
+          echo "dmg app binary:   $actual bytes"
+          if [ "$actual" != "$expected" ]; then echo "::error::The .dmg does not contain the full published binary"; exit 1; fi
