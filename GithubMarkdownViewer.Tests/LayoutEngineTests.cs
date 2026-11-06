@@ -137,6 +137,24 @@ public class LayoutEngineTests
     }
 
     [Fact]
+    public void TableStripesStartWithAPlainFirstBodyRow()
+    {
+        using var layout = Layout("| h |\n|---|\n| 1 |\n| 2 |\n| 3 |\n| 4 |", 400);
+
+        // One fill box per cell, top to bottom: the header, then four body rows.
+        var fills = layout.Boxes.OfType<FillBox>().Select(f => f.Fill).ToArray();
+
+        Assert.Equal(new[]
+        {
+            PaletteColor.TableHeaderBackground,
+            PaletteColor.None,
+            PaletteColor.TableAltRowBackground,
+            PaletteColor.None,
+            PaletteColor.TableAltRowBackground,
+        }, fills);
+    }
+
+    [Fact]
     public void TableCellsWrapWhenTheTableIsNarrow()
     {
         var wide = "word " + string.Join(' ', Enumerable.Repeat("filler", 12));
