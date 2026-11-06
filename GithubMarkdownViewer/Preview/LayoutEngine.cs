@@ -310,12 +310,14 @@ public sealed class LayoutEngine
         var contentWidths = ColumnWidths(minWidths, maxWidths, available);
 
         var cursor = y;
+        var bodyRow = 0;
         for (var r = 0; r < table.Rows.Count; r++)
         {
             var row = table.Rows[r];
             var role = new TextRole(TextKind.Body, Strong: row.IsHeader);
+            // Like GitHub, count stripes from the first body row: it is plain, the second is shaded, and so on.
             var fill = row.IsHeader ? PaletteColor.TableHeaderBackground
-                : r % 2 == 0 ? PaletteColor.None : PaletteColor.TableAltRowBackground;
+                : bodyRow++ % 2 == 0 ? PaletteColor.None : PaletteColor.TableAltRowBackground;
 
             var texts = new IPreviewText[columns];
             var rowHeight = 0.0;
